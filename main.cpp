@@ -16,6 +16,7 @@
 #include <QFileDialog>
 #include <QDesktopServices>
 #include <QMessageBox>
+#include <QScrollArea>
 
 #include <iostream>
 #include <fstream>
@@ -220,7 +221,6 @@ struct PDFInfo
     }
 };
 
-
 static QWidget *embedIntoHBoxLayout(QWidget *w, int margin = 5)
 {
     auto result = new QWidget;
@@ -230,6 +230,16 @@ static QWidget *embedIntoHBoxLayout(QWidget *w, int margin = 5)
     return result;
 }
 
+static QWidget *embedIntoVBoxLayout(QWidget *w, int margin = 5) 
+{
+    auto result = new QWidget;
+    auto layout = new QVBoxLayout(result);
+    layout->setContentsMargins(margin, margin, margin, margin);
+    layout->addWidget(w);
+    return result;
+}
+
+//QMap<int, QPair<QString, QWidget *>> removedItems;
 //void filterToolBoxItems(QToolBox *toolbox, const QString &searchText) 
 //{
 //    // First restore any previously removed items if we're doing a new search
@@ -269,78 +279,95 @@ static QWidget *embedIntoHBoxLayout(QWidget *w, int margin = 5)
 //    }
 //}
 
-void collapseAllToolBoxItems(QToolBox *toolbox) 
-{
-    QWidget *dummyWidget = new QWidget();
-    dummyWidget->setFixedHeight(0);
-    dummyWidget->setVisible(false);
-
-    int dummyIndex = toolbox->addItem(dummyWidget, "");
-
-    toolbox->setCurrentIndex(dummyIndex);
-
-    toolbox->setItemText(dummyIndex, "");
-}
-
-void handleOutput() 
-{
-
-}
-void handleError()
-{
-
-}
-
-QMap<int, QPair<QString, QWidget *>> removedItems;
-
-class pdfManager : public QMainWindow 
+class PDFManager : public QMainWindow 
 {
     Q_OBJECT
-private:
-    QWidget *centralWidget;
-    QVBoxLayout *vbox;
-    QToolBox *toolbox;
-    QLineEdit *searchBar;
-    std::vector<PDFInfo> pdf_files;
-    QMap<QProcess *, QString> m_processToFile;
-
   public:
-    pdfManager(QWidget *parent = nullptr);
+    PDFManager(QWidget *parent = nullptr);
   private slots:
     void handleFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void addNewPDF();
     void openPDF(const QString &filePath);
     void filterToolBoxItems();
+    void collapseAllToolBoxItems(QToolBox *toolbox);
+  private:
+    QWidget *centralWidget;
+    QVBoxLayout *vbox;
+    QToolBox *toolbox;
+    QLineEdit *searchBar;
+    std::vector<PDFInfo> PDFFiles;
+    QMap<QProcess *, QString> processToPDF;
 };
 
-pdfManager::pdfManager(QWidget *parent)
+PDFManager::PDFManager(QWidget *parent)
 {
     setWindowTitle("PDF Manger");
     setWindowFlags(Qt::Window);
     setWindowIcon(QIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\icon.png")); 
-    QFont defaultFont("Arial", 18);   // Font family "Arial" with size 14
+
+    QFont defaultFont("Arial", 18);
     QApplication::setFont(defaultFont);
-    resize(400, 200);
+    resize(800, 400);
 
     centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
     auto main_layout = new QVBoxLayout(centralWidget);
         
-    searchBar = new QLineEdit();
+    searchBar = new QLineEdit(this);
     searchBar->setPlaceholderText("Search...");
+    searchBar->setFont(defaultFont);
 
-    toolbox = new QToolBox();
+    QObject::connect(searchBar, &QLineEdit::textChanged,
+                     this, &PDFManager::filterToolBoxItems);
 
-    auto container = new QWidget();
+    main_layout->addWidget(searchBar);
+
+    toolbox = new QToolBox(this);
+    toolbox->setStyleSheet(
+        "QToolBox {"
+        "    background-color: #1e1e1e;"   // Set the background color of the
+        "}"
+        "QToolBox::tab {"
+        "    background-color: #3f5570;"   
+        "    color: white;"                
+        "    border-radius: 4px;"          
+        "}"
+        "QToolBox::tab:selected {"         
+        "    background-color: #2d5bb9;"   
+        "    font-weight: bold;"           
+        "}"
+        "QToolBox::tab:hover {"            
+        "    background-color: #3d73c9;"   
+        "}"
+    );
+
+    QScrollArea *scrollArea = new QScrollArea(this);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setStyleSheet(
+        "QScrollArea {"
+        "    background-color: #1e1e1e;"   
+        "    border: none;"                
+        "}");
+
+    auto container = new QWidget(this);
+    container->setStyleSheet(
+        "QWidget {"
+        "    background-color: #1e1e1e;" 
+        "}");
     vbox = new QVBoxLayout(container);
+    vbox->setSpacing(5);   
+    vbox->setContentsMargins(30, 10, 30, 10);   
 
     toolbox->addItem(container, "Programming");
 
-    // Add and center an add button to add new books
+    scrollArea->setWidget(toolbox);
+    
+    // Add and center an add button to add new pdfs
     auto addButton = new QPushButton("+");
-    addButton->setMaximumWidth(30);  
-    addButton->setMaximumHeight(30);
+    addButton->setFixedSize(30, 30);
 
     auto centerLayout = new QHBoxLayout();
     centerLayout->addStretch();
@@ -348,24 +375,20 @@ pdfManager::pdfManager(QWidget *parent)
     centerLayout->addStretch();
 
     vbox->addLayout(centerLayout);
-
-    connect(addButton, &QPushButton::clicked,
-            this, &pdfManager::addNewPDF);
-
     // Add the "+" button before the stretch
     vbox->addStretch(1);   
-    vbox->setSpacing(5);   
-    vbox->setContentsMargins(10, 10, 10, 10);   
+
+    connect(addButton, &QPushButton::clicked,
+            this, &PDFManager::addNewPDF);
+
         
     collapseAllToolBoxItems(toolbox);
 
-    QObject::connect(searchBar, &QLineEdit::textChanged, this , &pdfManager::filterToolBoxItems);
 
-    main_layout->addWidget(searchBar);
-    main_layout->addWidget(toolbox);
+    main_layout->addWidget(scrollArea);
 }
 
-void pdfManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
+void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
     QProcess* process = qobject_cast<QProcess*>(sender());
 
@@ -379,7 +402,7 @@ void pdfManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
         return;
     }
         
-    QString fileName = m_processToFile.value(process);
+    QString fileName = processToPDF.value(process);
     if (fileName.isEmpty()) 
         return;
         
@@ -390,7 +413,7 @@ void pdfManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
         QMessageBox::warning(this, "Process Window", "Error occurred, something went wrong");
     }
         
-    for (auto& pdf : pdf_files) 
+    for (auto& pdf : PDFFiles) 
     {
         if (QString::fromStdString(pdf.file_name) == fileName) 
         {
@@ -413,7 +436,7 @@ void pdfManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
     }
 }
 
-void pdfManager::addNewPDF()
+void PDFManager::addNewPDF()
 {
     QString filePath = QFileDialog::getOpenFileName(this, "Open PDF File",
                                                     QDir::homePath(), "PDF Files (*.pdf))");
@@ -432,7 +455,7 @@ void pdfManager::addNewPDF()
 
     // check whether this pdf already exists or not
     bool isDuplicate = false;
-    for (const auto& pdf : pdf_files) 
+    for (const auto& pdf : PDFFiles) 
     {
         if (pdf.file_name == fileName.toStdString()) 
         {
@@ -449,7 +472,6 @@ void pdfManager::addNewPDF()
     if(!isDuplicate)
     {
         auto pdfButton = new QPushButton(fileName);
-        //pdfButton->setWordWrap(true);   // Enable word wrap
         pdfButton->setSizePolicy(QSizePolicy::Expanding,
                                  QSizePolicy::Expanding); 
             
@@ -464,36 +486,36 @@ void pdfManager::addNewPDF()
         newPDF.file_path = filePath.toStdString();
         newPDF.button = pdfButton;
             
-        pdf_files.push_back(newPDF);
+        PDFFiles.push_back(newPDF);
             
         int addButtonIndex = vbox->indexOf(vbox->itemAt(vbox->count() - 2)->widget());
         vbox->insertWidget(addButtonIndex, pdfButton);
     }
 }
 
-void pdfManager::openPDF(const QString &filePath)
+void PDFManager::openPDF(const QString &filePath)
 {
     QFileInfo fileInfo(filePath);
     QString fileName = fileInfo.fileName();
 
     QProcess* process = new QProcess(this);
 
-    m_processToFile[process] = fileName;
+    processToPDF[process] = fileName;
 
     process->setProperty("autoDelete", true);
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &pdfManager::handleFinished);
+            this, &PDFManager::handleFinished);
 
     connect(process, &QObject::destroyed, this,
     [this, process]() {
-        m_processToFile.remove(process);
+        processToPDF.remove(process);
     });
 
     QStringList arguments;
     arguments << filePath;
         
     // If we have a stored page number, open to that page
-    for (const auto& pdf : pdf_files) 
+    for (const auto& pdf : PDFFiles) 
     {
         if (QString::fromStdString(pdf.file_name) == fileName && pdf.page_num > 0) {
             arguments << QString("-view");
@@ -512,12 +534,12 @@ void pdfManager::openPDF(const QString &filePath)
     }
 }
 
-void pdfManager::filterToolBoxItems() 
+void PDFManager::filterToolBoxItems() 
 {
     QString searchText = searchBar->text();
     
     if (searchText.isEmpty()) {
-        for (auto &pdf : pdf_files) {
+        for (auto &pdf : PDFFiles) {
             pdf.button->setVisible(true); 
         }
         for (int i = 0; i < toolbox->count(); ++i) {
@@ -529,7 +551,7 @@ void pdfManager::filterToolBoxItems()
     for (int i = 0; i < toolbox->count(); ++i) 
     {
         bool childMatch = false;
-        for (auto &pdf : pdf_files) {
+        for (auto &pdf : PDFFiles) {
             if (searchText.isEmpty()) {
                 pdf.button->setVisible(true);
             } else {
@@ -543,12 +565,24 @@ void pdfManager::filterToolBoxItems()
     }
 }
 
+void PDFManager::collapseAllToolBoxItems(QToolBox *toolbox) 
+{
+    QWidget *dummyWidget = new QWidget();
+    dummyWidget->setFixedHeight(0);
+    dummyWidget->setVisible(false);
+
+    int dummyIndex = toolbox->addItem(dummyWidget, "");
+
+    toolbox->setCurrentIndex(dummyIndex);
+
+    toolbox->setItemText(dummyIndex, "");
+}
 
 int main(int argc, char *argv[]) 
 {
     QApplication app(argc, argv);
 
-    pdfManager manager;
+    PDFManager manager;
     manager.show();
 
     return app.exec();
