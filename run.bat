@@ -1,0 +1,2 @@
+C:\Qt\Tools\CMake_64\bin\cmake.exe -S . -B build -G "Visual Studio 17 2022"  -DCMAKE_PREFIX_PATH=C:/Qt/6.8.0/6.8.2_Static_msvc -DCMAKE_BUILD_TYPE=Release
+C:\Qt\Tools\CMake_64\bin\cmake.exe --build build --config Release
