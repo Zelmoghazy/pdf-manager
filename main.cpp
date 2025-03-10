@@ -239,10 +239,17 @@ struct PDFInfo
             }
         }
     }
-    // For linux 
+    // For linux, each pdf file has a corresponding small xml file so regex shouldnt slow things that much and its easier
     void parseOkularSettings(const std::string& settings_path)
     {
+        std::regex viewportRegex(R"(<current\s+viewport="(\d+);)");
+        std::smatch match;
 
+        if (std::regex_search(xmlContent, match, viewportRegex) && match.size() > 1) 
+        {
+            return std::stoi(match[1].str());
+        }
+        return -1;
     }
 };
 
@@ -616,7 +623,123 @@ void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
         QMessageBox::critical(this, "Error","Failed to start Process");
     }
 }
-
+/* void pdfManager::openPDF(const QString &filePath)
+{
+    QString sumatraPath;
+    const QString CONFIG_FILE_PATH = QDir::homePath() + "/.pdfmanager/config.ini";
+    
+    // Check if config file exists
+    QFileInfo configFileInfo(CONFIG_FILE_PATH);
+    if (configFileInfo.exists()) {
+        // Read Sumatra path from config file
+        QSettings settings(CONFIG_FILE_PATH, QSettings::IniFormat);
+        sumatraPath = settings.value("Paths/SumatraPDF").toString();
+        
+        // Verify the path is still valid
+        if (!QFileInfo(sumatraPath).exists()) {
+            sumatraPath.clear(); // Path no longer valid, need to find it again
+        }
+    }
+    
+    // If path not found in config, check common installation location
+    if (sumatraPath.isEmpty()) {
+        QString commonPath = "C:\\Program Files\\SumatraPDF\\SumatraPDF.exe";
+        if (QFileInfo(commonPath).exists()) {
+            sumatraPath = commonPath;
+        } else {
+            commonPath = "C:\\Program Files (x86)\\SumatraPDF\\SumatraPDF.exe";
+            if (QFileInfo(commonPath).exists()) {
+                sumatraPath = commonPath;
+            } else {
+                // Check in AppData location
+                commonPath = QDir::homePath() + "\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe";
+                if (QFileInfo(commonPath).exists()) {
+                    sumatraPath = commonPath;
+                }
+            }
+        }
+        
+        // If still not found, prompt user
+        if (sumatraPath.isEmpty()) {
+            QMessageBox msgBox;
+            msgBox.setWindowTitle("SumatraPDF Not Found");
+            msgBox.setText("SumatraPDF is required to view PDF files.");
+            msgBox.setInformativeText("Would you like to locate SumatraPDF on your system or download it?");
+            QPushButton *locateButton = msgBox.addButton("Locate", QMessageBox::ActionRole);
+            QPushButton *downloadButton = msgBox.addButton("Download", QMessageBox::ActionRole);
+            QPushButton *cancelButton = msgBox.addButton(QMessageBox::Cancel);
+            
+            msgBox.exec();
+            
+            if (msgBox.clickedButton() == locateButton) {
+                sumatraPath = QFileDialog::getOpenFileName(this,
+                    "Locate SumatraPDF Executable", 
+                    QDir::homePath(),
+                    "Executable Files (*.exe)");
+                
+                if (sumatraPath.isEmpty()) {
+                    QMessageBox::warning(this, "Operation Cancelled", "PDF viewer path not set.");
+                    return;
+                }
+            } 
+            else if (msgBox.clickedButton() == downloadButton) {
+                QDesktopServices::openUrl(QUrl("https://www.sumatrapdfreader.org/download-free-pdf-viewer"));
+                QMessageBox::information(this, "Download Started", 
+                    "Please install SumatraPDF and try again.\n"
+                    "After installation, you will be prompted to locate the executable.");
+                return;
+            }
+            else {
+                QMessageBox::warning(this, "Operation Cancelled", "PDF viewer path not set.");
+                return;
+            }
+        }
+        
+        // Save the path to config file
+        QDir configDir(QFileInfo(CONFIG_FILE_PATH).path());
+        if (!configDir.exists()) {
+            configDir.mkpath(".");
+        }
+        
+        QSettings settings(CONFIG_FILE_PATH, QSettings::IniFormat);
+        settings.setValue("Paths/SumatraPDF", sumatraPath);
+        settings.sync();
+    }
+    
+    // Now open the PDF with the found path
+    QFileInfo fileInfo(filePath);
+    QString fileName = fileInfo.fileName();
+    QProcess* process = new QProcess(this);
+    m_processToFile[process] = fileName;
+    process->setProperty("autoDelete", true);
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &pdfManager::handleFinished);
+    connect(process, &QObject::destroyed, this,
+    [this, process]() {
+        m_processToFile.remove(process);
+    });
+    
+    QStringList arguments;
+    arguments << filePath;
+    
+    // If we have a stored page number, open to that page
+    for (const auto& pdf : pdf_files) 
+    {
+        if (QString::fromStdString(pdf.file_name) == fileName && pdf.page_num > 0) {
+            arguments << QString("-view");
+            arguments << QString("single page");
+            arguments << QString("-new-window");
+            arguments << QString("-page");
+            arguments << QString::number(pdf.page_num);
+            break;
+        }
+    }
+    
+    process->start(sumatraPath, arguments);
+    if (!process->waitForStarted()){
+        QMessageBox::critical(this, "Error", "Failed to start SumatraPDF.");
+    }
+} */
 void PDFManager::filterToolBoxItems() 
 {
     QString searchText = searchBar->text();
@@ -827,14 +950,6 @@ void PDFManager::loadData()
     }
 }
 
-
-struct PDFInfo
-{
-    bool found = false;
-    std::string file_name;
-    std::string file_path;
-    int page_num = 0;
-    std::string mode;
 
 int main(int argc, char *argv[]) 
 {
