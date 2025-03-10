@@ -17,6 +17,8 @@
 #include <QDesktopServices>
 #include <QMessageBox>
 #include <QScrollArea>
+#include <QMenuBar>
+#include <QDialog>
 
 #include <iostream>
 #include <fstream>
@@ -27,6 +29,24 @@
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin) // Windows
 
 #define MAX(a, b) (a>b)?a:b
+
+static QWidget *embedIntoHBoxLayout(QWidget *w, int margin = 5)
+{
+    auto result = new QWidget;
+    auto layout = new QHBoxLayout(result);
+    layout->setContentsMargins(margin, margin, margin, margin);
+    layout->addWidget(w);
+    return result;
+}
+
+static QWidget *embedIntoVBoxLayout(QWidget *w, int margin = 5) 
+{
+    auto result = new QWidget;
+    auto layout = new QVBoxLayout(result);
+    layout->setContentsMargins(margin, margin, margin, margin);
+    layout->addWidget(w);
+    return result;
+}
 
 struct PDFInfo
 {
@@ -219,25 +239,25 @@ struct PDFInfo
             }
         }
     }
+    // For linux 
+    void parseOkularSettings(const std::string& settings_path)
+    {
+
+    }
 };
 
-static QWidget *embedIntoHBoxLayout(QWidget *w, int margin = 5)
+struct PDFCat
 {
-    auto result = new QWidget;
-    auto layout = new QHBoxLayout(result);
-    layout->setContentsMargins(margin, margin, margin, margin);
-    layout->addWidget(w);
-    return result;
-}
+    std::string category;
+    std::vector<PDFInfo> PDFFiles;
+    QWidget *container;
+    QVBoxLayout *layout;
+    QPushButton *addButton;
 
-static QWidget *embedIntoVBoxLayout(QWidget *w, int margin = 5) 
-{
-    auto result = new QWidget;
-    auto layout = new QVBoxLayout(result);
-    layout->setContentsMargins(margin, margin, margin, margin);
-    layout->addWidget(w);
-    return result;
-}
+    PDFCat(const std::string name) : category(name)
+    { 
+    }
+};
 
 //QMap<int, QPair<QString, QWidget *>> removedItems;
 //void filterToolBoxItems(QToolBox *toolbox, const QString &searchText) 
@@ -285,18 +305,53 @@ class PDFManager : public QMainWindow
   public:
     PDFManager(QWidget *parent = nullptr);
   private slots:
-    void handleFinished(int exitCode, QProcess::ExitStatus exitStatus);
-    void addNewPDF();
-    void openPDF(const QString &filePath);
+    void handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category);
+    void addNewPDF(PDFCat &category);
+    void openPDF(PDFCat &cat, const QString &filePath);
     void filterToolBoxItems();
     void collapseAllToolBoxItems(QToolBox *toolbox);
-  private:
+    void createMenu();
+    void serializeData();
+    void loadData();
+  public:
+    QMenu *fileMenu;
+    QAction *exitAction;
     QWidget *centralWidget;
     QVBoxLayout *vbox;
     QToolBox *toolbox;
     QLineEdit *searchBar;
-    std::vector<PDFInfo> PDFFiles;
+    std::vector<PDFCat> PDFcats;
     QMap<QProcess *, QString> processToPDF;
+
+  protected:
+    void closeEvent(QCloseEvent *event) override 
+    {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this, "Save Changes", "Do you want to save changes before exiting?",
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+
+        if (reply == QMessageBox::Yes) 
+        {
+            if (serializeData()) 
+            {
+                event->accept();
+            } else {
+                QMessageBox::critical(this, "Error",
+                                      "Failed to save data. Close anyway?",
+                                      QMessageBox::Yes | QMessageBox::No);
+
+                if (QMessageBox::Yes) {
+                    event->accept();
+                } else {
+                    event->ignore();
+                }
+            }
+        } else if (reply == QMessageBox::No) {
+            event->accept();
+        } else {
+            event->ignore();
+        }
+    }
 };
 
 PDFManager::PDFManager(QWidget *parent)
@@ -305,18 +360,35 @@ PDFManager::PDFManager(QWidget *parent)
     setWindowFlags(Qt::Window);
     setWindowIcon(QIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\icon.png")); 
 
-    QFont defaultFont("Arial", 18);
-    QApplication::setFont(defaultFont);
+
+    QFont *defaultFont;
+    QString fontPath = "C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\CaskaydiaCoveNerdFont-Regular.ttf";
+    int fontId = QFontDatabase::addApplicationFont(fontPath);
+
+    if (fontId != -1) 
+    {
+        QString fontFamily =
+            QFontDatabase::applicationFontFamilies(fontId).at(0);
+        defaultFont = new QFont(fontFamily, 18);
+    } else {
+        // Handle the error: the font could not be loaded
+        qWarning() << "Failed to load font from path:" << fontPath;
+        defaultFont = new QFont("Arial", 12);
+    }
+
+    QApplication::setFont(*defaultFont);
     resize(800, 400);
 
     centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
     auto main_layout = new QVBoxLayout(centralWidget);
+
+    createMenu();
         
     searchBar = new QLineEdit(this);
     searchBar->setPlaceholderText("Search...");
-    searchBar->setFont(defaultFont);
+    searchBar->setFont(*defaultFont);
 
     QObject::connect(searchBar, &QLineEdit::textChanged,
                      this, &PDFManager::filterToolBoxItems);
@@ -329,16 +401,16 @@ PDFManager::PDFManager(QWidget *parent)
         "    background-color: #1e1e1e;"   // Set the background color of the
         "}"
         "QToolBox::tab {"
-        "    background-color: #3f5570;"   
+        "    background-color: #282a36;"   
         "    color: white;"                
         "    border-radius: 4px;"          
         "}"
         "QToolBox::tab:selected {"         
-        "    background-color: #2d5bb9;"   
-        "    font-weight: bold;"           
+        "    background-color: #44475a;"   
         "}"
         "QToolBox::tab:hover {"            
-        "    background-color: #3d73c9;"   
+        "    background-color: #6272a4;"  
+        
         "}"
     );
 
@@ -352,43 +424,53 @@ PDFManager::PDFManager(QWidget *parent)
         "    border: none;"                
         "}");
 
-    auto container = new QWidget(this);
-    container->setStyleSheet(
-        "QWidget {"
-        "    background-color: #1e1e1e;" 
-        "}");
-    vbox = new QVBoxLayout(container);
-    vbox->setSpacing(5);   
-    vbox->setContentsMargins(30, 10, 30, 10);   
+    PDFcats.push_back(PDFCat("Programming"));
+    PDFcats.push_back(PDFCat("Math"));
+    PDFcats.push_back(PDFCat("Science"));
+    PDFcats.push_back(PDFCat("Literature"));
+    PDFcats.push_back(PDFCat("Music"));
 
-    toolbox->addItem(container, "Programming");
+    for (auto& cat : PDFcats)
+    {
+        cat.container = new QWidget(this);
+        cat.container->setStyleSheet(
+            "QWidget {"
+            "    background-color: #1e1e1e;" 
+            "}");
+        cat.layout = new QVBoxLayout(cat.container);
+        cat.layout->setSpacing(5);   
+        cat.layout->setContentsMargins(30, 10, 30, 10);   
+
+        toolbox->addItem(cat.container, cat.category.c_str());
+
+        // Add and center an add button to add new pdfs
+        cat.addButton = new QPushButton("+");
+        cat.addButton->setFixedSize(30, 30);
+
+        auto centerLayout = new QHBoxLayout();
+        centerLayout->addStretch();
+        centerLayout->addWidget(cat.addButton);
+        centerLayout->addStretch();
+
+        cat.layout->addLayout(centerLayout);
+        // Add the "+" button before the stretch
+        cat.layout->addStretch(1);   
+
+        connect(cat.addButton, &QPushButton::clicked, this,
+                [this, &cat]() {
+                    this->addNewPDF(cat); 
+                });
+    }
 
     scrollArea->setWidget(toolbox);
     
-    // Add and center an add button to add new pdfs
-    auto addButton = new QPushButton("+");
-    addButton->setFixedSize(30, 30);
-
-    auto centerLayout = new QHBoxLayout();
-    centerLayout->addStretch();
-    centerLayout->addWidget(addButton);
-    centerLayout->addStretch();
-
-    vbox->addLayout(centerLayout);
-    // Add the "+" button before the stretch
-    vbox->addStretch(1);   
-
-    connect(addButton, &QPushButton::clicked,
-            this, &PDFManager::addNewPDF);
-
-        
     collapseAllToolBoxItems(toolbox);
 
 
     main_layout->addWidget(scrollArea);
 }
 
-void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
+void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category) 
 {
     QProcess* process = qobject_cast<QProcess*>(sender());
 
@@ -413,7 +495,7 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
         QMessageBox::warning(this, "Process Window", "Error occurred, something went wrong");
     }
         
-    for (auto& pdf : PDFFiles) 
+    for (auto& pdf : category.PDFFiles) 
     {
         if (QString::fromStdString(pdf.file_name) == fileName) 
         {
@@ -436,7 +518,7 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
     }
 }
 
-void PDFManager::addNewPDF()
+void PDFManager::addNewPDF(PDFCat& category) 
 {
     QString filePath = QFileDialog::getOpenFileName(this, "Open PDF File",
                                                     QDir::homePath(), "PDF Files (*.pdf))");
@@ -455,7 +537,7 @@ void PDFManager::addNewPDF()
 
     // check whether this pdf already exists or not
     bool isDuplicate = false;
-    for (const auto& pdf : PDFFiles) 
+    for (auto &pdf : category.PDFFiles) 
     {
         if (pdf.file_name == fileName.toStdString()) 
         {
@@ -476,9 +558,8 @@ void PDFManager::addNewPDF()
                                  QSizePolicy::Expanding); 
             
         connect(pdfButton, &QPushButton::clicked, this, 
-        [this, filePath]()
-        {
-            openPDF(filePath);
+        [this, filePath, &category](){
+            openPDF(category, filePath);
         });
 
         PDFInfo newPDF;
@@ -486,14 +567,14 @@ void PDFManager::addNewPDF()
         newPDF.file_path = filePath.toStdString();
         newPDF.button = pdfButton;
             
-        PDFFiles.push_back(newPDF);
+        category.PDFFiles.push_back(newPDF);
             
-        int addButtonIndex = vbox->indexOf(vbox->itemAt(vbox->count() - 2)->widget());
-        vbox->insertWidget(addButtonIndex, pdfButton);
+        int addButtonIndex = category.layout->indexOf(category.layout->itemAt(category.layout->count() - 2)->widget());
+        category.layout->insertWidget(addButtonIndex, pdfButton);
     }
 }
 
-void PDFManager::openPDF(const QString &filePath)
+void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
 {
     QFileInfo fileInfo(filePath);
     QString fileName = fileInfo.fileName();
@@ -503,8 +584,10 @@ void PDFManager::openPDF(const QString &filePath)
     processToPDF[process] = fileName;
 
     process->setProperty("autoDelete", true);
-    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &PDFManager::handleFinished);
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+            [this, &cat](int exitCode, QProcess::ExitStatus exitStatus) {
+                this->handleFinished(exitCode, exitStatus, cat);
+            });
 
     connect(process, &QObject::destroyed, this,
     [this, process]() {
@@ -515,7 +598,7 @@ void PDFManager::openPDF(const QString &filePath)
     arguments << filePath;
         
     // If we have a stored page number, open to that page
-    for (const auto& pdf : PDFFiles) 
+    for (const auto& pdf : cat.PDFFiles) 
     {
         if (QString::fromStdString(pdf.file_name) == fileName && pdf.page_num > 0) {
             arguments << QString("-view");
@@ -538,30 +621,35 @@ void PDFManager::filterToolBoxItems()
 {
     QString searchText = searchBar->text();
     
-    if (searchText.isEmpty()) {
-        for (auto &pdf : PDFFiles) {
-            pdf.button->setVisible(true); 
+    if (searchText.isEmpty()) 
+    {
+        for (auto &cat : PDFcats) {
+            for (auto &pdf : cat.PDFFiles) {
+                pdf.button->setVisible(true); 
+            }
         }
         for (int i = 0; i < toolbox->count(); ++i) {
             toolbox->setItemEnabled(i, true);
         }
         return;   // Exit the function early
     }
-
-    for (int i = 0; i < toolbox->count(); ++i) 
+    int idx = 0;
+    for (auto &cat : PDFcats) 
     {
         bool childMatch = false;
-        for (auto &pdf : PDFFiles) {
+        for (auto &pdf : cat.PDFFiles) {
             if (searchText.isEmpty()) {
                 pdf.button->setVisible(true);
             } else {
                 bool match = QString::fromStdString(pdf.file_name)
                                     .contains(searchText, Qt::CaseInsensitive);
                 pdf.button->setVisible(match);
-                childMatch = true;
+                if (match)
+                    childMatch = true;
             }
         }
-        toolbox->setItemEnabled(i, childMatch);
+        toolbox->setItemEnabled(idx, childMatch);
+        idx++;
     }
 }
 
@@ -577,6 +665,176 @@ void PDFManager::collapseAllToolBoxItems(QToolBox *toolbox)
 
     toolbox->setItemText(dummyIndex, "");
 }
+
+void PDFManager::createMenu() 
+{
+    fileMenu = menuBar()->addMenu(tr("&File"));
+
+    exitAction = fileMenu->addAction(tr("E&xit"));
+    exitAction->setIcon(QIcon(":/icons/exit.png"));
+    exitAction->setShortcut(QKeySequence::Quit); 
+
+    fileMenu->addSeparator();
+
+    QAction *openAction = fileMenu->addAction(tr("&Open"));
+    openAction->setIcon(QIcon(":/icons/open.png")); 
+    openAction->setShortcut(QKeySequence::Open);
+
+
+    connect(exitAction, &QAction::triggered, 
+            qApp, &QApplication::quit);
+
+    menuBar()->setStyleSheet(
+        "QMenuBar {"
+        "    background-color: #2E3440;"   // Dark background
+        "    color: #D8DEE9;"              // Light text
+        "    font-weight: bold;"
+        "    padding: 5px 10px;"
+        "}"
+        "QMenuBar::item {"
+        "    padding: 6px 15px;"
+        "    border-radius: 4px;"   // Rounded corners
+        "    spacing: 5px;"
+        "}"
+        "QMenuBar::item:selected {"
+        "    background-color: #4C566A;"   // Darker highlight
+        "}"
+        "QMenuBar::item:pressed {"
+        "    background-color: #5E81AC;"   // Soft blue press effect
+        "}"
+        "QMenu {"
+        "    background-color: #3B4252;"
+        "    color: #D8DEE9;"
+        "    border: 1px solid #4C566A;"
+        "    padding: 5px;"
+        "}"
+        "QMenu::item {"
+        "    padding: 8px 20px;"
+        "    border-radius: 4px;"
+        "}"
+        "QMenu::item:selected {"
+        "    background-color: #5E81AC;"   // Softer selection color
+        "    color: #ECEFF4;"
+        "}"
+        "QMenu::separator {"
+        "    height: 1px;"
+        "    background: #4C566A;"
+        "    margin: 4px 10px;"
+        "}");
+}
+
+void PDFManager::serializeData() 
+{
+    std::ofstream file("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\pdfmanager.conf");
+    if (!file.is_open()) {
+        return false;
+    }
+    for (auto &cat : PDFcats) 
+    {
+        out << cat.category << ", " << cat.PDFFiles.size() << "\n";
+
+        for (const auto &pdf : cat.PDFFiles) {
+            out << pdf.file_name << ", " << pdf.file_path << ", " << pdf.page_num
+                << "\n";
+        }
+
+
+        out << "\n";
+    }
+}
+
+bool deserializePDFCat(std::istream &in, PDFCat &cat) 
+{
+    std::string line;
+
+    if (!std::getline(in, line) || line.empty()) {
+        return false;
+    }
+
+    size_t comma_pos = line.find(", ");
+    if (comma_pos == std::string::npos) {
+        return false;
+    }
+
+    cat.category = line.substr(0, comma_pos);
+    int fileCount = std::stoi(line.substr(comma_pos + 2));
+
+    cat.PDFFiles.clear();
+    for (int i = 0; i < fileCount; i++) 
+    {
+        if (!std::getline(in, line)) {
+            return false;
+        }
+
+        std::istringstream iss(line);
+        PDFInfo pdf;
+
+        std::getline(iss, pdf.file_name, ',');
+        if (pdf.file_name.empty()) {
+            return false;
+        }
+        pdf.file_name = pdf.file_name.at(0) == ' ' ? pdf.file_name.substr(1)
+                                                   : pdf.file_name;
+
+        std::getline(iss, pdf.file_path, ',');
+        if (pdf.file_path.empty()) {
+            return false;
+        }
+        pdf.file_path = pdf.file_path.at(0) == ' ' ? pdf.file_path.substr(1)
+                                                   : pdf.file_path;
+
+        std::string page_num_str;
+        std::getline(iss, page_num_str);
+        if (page_num_str.empty()) {
+            return false;
+        }
+        page_num_str =
+            page_num_str.at(0) == ' ' ? page_num_str.substr(1) : page_num_str;
+        pdf.page_num = std::stoi(page_num_str);
+
+        cat.PDFFiles.push_back(pdf);
+    }
+
+    std::getline(in, line);
+
+    return true;
+}
+
+void PDFManager::loadData() 
+{
+    std::ofstream in("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\pdfmanager.conf");
+    if (!in.is_open()) {
+        return;
+    }
+
+    PDFCat cat;
+
+    while (in.peek() != EOF) 
+    {
+        if (deserializePDFCat(in, cat)) 
+        {
+            PDFcats.push_back(cat);
+        } 
+        else 
+        {
+            if (in.peek() == EOF) {
+                break;
+            }
+            std::string line;
+            while (in.peek() != EOF && std::getline(in, line) && line.empty()) {
+            }
+        }
+    }
+}
+
+
+struct PDFInfo
+{
+    bool found = false;
+    std::string file_name;
+    std::string file_path;
+    int page_num = 0;
+    std::string mode;
 
 int main(int argc, char *argv[]) 
 {
