@@ -1,34 +1,4 @@
-#include <QMainWindow>
-#include <QApplication>
-#include <QWidget>
-#include <QVBoxLayout>
-#include <QPushButton>
-#include <QLabel>
-#include <QtPlugin> // Required for static plugins
-#include <QToolBox>
-#include <QTextEdit>
-#include <QPlainTextEdit>
-#include <QTextBrowser>
-#include <QObject>
-#include <QLineEdit>
-#include <QProcess>
-#include <QFileInfo>
-#include <QFileDialog>
-#include <QDesktopServices>
-#include <QMessageBox>
-#include <QScrollArea>
-#include <QMenuBar>
-#include <QDialog>
-
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <cstring>
-#include <vector>
-
-Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin) // Windows
-
-#define MAX(a, b) (a>b)?a:b
+#include "main.h"
 
 static QWidget *embedIntoHBoxLayout(QWidget *w, int margin = 5)
 {
@@ -48,342 +18,17 @@ static QWidget *embedIntoVBoxLayout(QWidget *w, int margin = 5)
     return result;
 }
 
-struct PDFInfo
-{
-    bool found = false;
-    std::string file_name;
-    std::string file_path;
-    int page_num = 0;
-    std::string mode;
-
-    QPushButton *button = nullptr;
-
-    PDFInfo() {}
-    PDFInfo(std::string filename) : file_name(filename){}
-
-    // Dumbest way I could think of right now, should improve later 
-    void parseSumatraSettings(const std::string &settings_path) 
-    {
-        std::ifstream file(settings_path, std::ios::binary);
-
-        if (!file) {
-            std::cerr << "Couldn't read file !\n";
-            return;
-        }
-        
-        // read with 8k chunks
-        constexpr size_t buf_size = 8192;
-        char buffer[buf_size];
-
-        file.rdbuf()->pubsetbuf(buffer, buf_size);
-
-        constexpr char file_states[] = "FileStates";
-        constexpr size_t file_states_len = 10;
-
-        std::string line;
-        line.reserve(512);
-
-        // Find FileStates
-        bool found_filestates = false;
-        while (std::getline(file, line))
-        {
-            if ((line.size() >= file_states_len))
-            {
-                if (memcmp(&line[0], file_states, file_states_len) == 0) 
-                {
-                    found_filestates = true;
-                    break;
-                }
-            }
-        }
-
-        // Shouldnt happen !
-        if (!found_filestates)
-        {
-            std::cerr << "Couldn't find FileStates in sumatra settings file !\n";
-            return;
-        }
-
-        // start parsing
-        constexpr char file_path[] = "FilePath";
-        constexpr size_t file_path_len = 8; 
-
-        constexpr char page_no[] = "PageNo";
-        constexpr size_t page_no_len = 6;
-        
-        int bracket_level = 1;
-        bool insidePdfEntry = false;
-
-        while (std::getline(file, line))
-        {
-            // skip whitespace
-            size_t pos = 0;
-            while (pos < line.size() && std::isspace((unsigned char)line[pos]))
-                ++pos;
-
-            size_t end = line.size();
-            while (end > pos && std::isspace((unsigned char)line[end - 1]))
-                --end;
-
-            // Check if line is empty after trimming
-            if (pos >= end)
-                continue; // skip empty lines
-
-            if (line[pos] == '[' || line[end-1] == '[') 
-            {
-                bracket_level++;
-                if (bracket_level == 2)  // we are inside a file state
-                {
-                    insidePdfEntry = true;
-                }
-                continue;
-            }
-            else if (line[pos] == ']')
-            {
-                bracket_level--;
-                if (bracket_level == 1 && insidePdfEntry)
-                {
-                    if (found) {
-                        return;
-                    }
-                    insidePdfEntry = false;
-                }
-                continue;
-            }
-
-            // start parsing entries
-            if (insidePdfEntry)
-            {
-                // Check filename first for a match
-                if ((pos <= (line.size() - file_path_len)) &&  
-                    (memcmp(&line[pos], file_path, file_path_len) == 0)) 
-                {
-                    size_t path_start = line.find('=', pos);
-
-                    if (path_start != std::string::npos)
-                    {
-                        // Get the full path
-                        std::string fullPath = line.substr(path_start+1);
-
-                        // Trim whitespace
-                        size_t startPos = 0;
-                        while (startPos < fullPath.length() && std::isspace((unsigned char)(fullPath[startPos]))) {
-                            startPos++;
-                        }
-                        
-                        size_t endPos = fullPath.length();
-                        while (endPos > startPos && std::isspace((unsigned char)(fullPath[endPos - 1]))) {
-                            endPos--;
-                        }
-
-                        size_t lastSlash1 = fullPath.rfind('\\', endPos - 1);
-                        size_t lastSlash2 = fullPath.rfind('/' , endPos - 1);
-                        size_t lastSlash;
-
-                        if (lastSlash1 == std::string::npos)
-                        {
-                            lastSlash = lastSlash2;
-                        } 
-                        else if (lastSlash2 == std::string::npos)
-                        {
-                            lastSlash = lastSlash1;
-                        } else {
-                            lastSlash = MAX(lastSlash1, lastSlash2);
-                        }
-
-                        if (lastSlash != std::string::npos)
-                        {
-                            lastSlash++;
-                            if (fullPath.compare(lastSlash, endPos - lastSlash,
-                                                 file_name, 0, file_name.length()) == 0) 
-                            {
-                                // found a match
-                                found = true;
-                            } 
-                        }
-                    }
-                }
-
-                // Continue parsing if found only
-                if(found)
-                {
-                    if ((pos <= line.size() - page_no_len) && 
-                        memcmp(&line[pos], page_no, page_no_len) == 0) 
-                    {
-                        size_t path_start = line.find('=', pos);
-
-                        if (path_start != std::string::npos)
-                        {
-                            std::string PageNo = line.substr(path_start+1);
-
-                            // Trim whitespace
-                            size_t startPos = 0;
-                            while (startPos < PageNo.length() && 
-                                   std::isspace((unsigned char)(PageNo[startPos]))) 
-                            {
-                                startPos++;
-                            }
-                            
-                            size_t endPos = PageNo.length();
-                            while (endPos > startPos &&
-                                   std::isspace((unsigned char)(PageNo[endPos - 1]))) 
-                            {
-                                endPos--;
-                            }
-
-                            page_num = std::stoi(PageNo.substr(startPos, endPos - startPos));
-                            return;
-                        }
-                    } 
-                }
-            }
-        }
-    }
-    // For linux, each pdf file has a corresponding small xml file so regex shouldnt slow things that much and its easier
-    void parseOkularSettings(const std::string& settings_path)
-    {
-        std::regex viewportRegex(R"(<current\s+viewport="(\d+);)");
-        std::smatch match;
-
-        if (std::regex_search(xmlContent, match, viewportRegex) && match.size() > 1) 
-        {
-            return std::stoi(match[1].str());
-        }
-        return -1;
-    }
-};
-
-struct PDFCat
-{
-    std::string category;
-    std::vector<PDFInfo> PDFFiles;
-    QWidget *container;
-    QVBoxLayout *layout;
-    QPushButton *addButton;
-
-    PDFCat(const std::string name) : category(name)
-    { 
-    }
-};
-
-//QMap<int, QPair<QString, QWidget *>> removedItems;
-//void filterToolBoxItems(QToolBox *toolbox, const QString &searchText) 
-//{
-//    // First restore any previously removed items if we're doing a new search
-//    if (!removedItems.isEmpty()) {
-//        QMapIterator<int, QPair<QString, QWidget *>> it(removedItems);
-//        while (it.hasNext()) {
-//            it.next();
-//            int idx = it.key();
-//            QString title = it.value().first;
-//            QWidget *widget = it.value().second;
-//
-//            // Insert at original index if possible, otherwise append
-//            if (idx < toolbox->count()) {
-//                toolbox->insertItem(idx, widget, title);
-//            } else {
-//                toolbox->addItem(widget, title);
-//            }
-//        }
-//        removedItems.clear();
-//    }
-//
-//    // Now remove items that don't match the search
-//    if (!searchText.isEmpty()) {
-//        for (int i = toolbox->count() - 1; i >= 0; --i) {
-//            QString itemName = toolbox->itemText(i);
-//            bool match = itemName.contains(searchText, Qt::CaseInsensitive);
-//
-//            if (!match) {
-//                // Store item before removing
-//                QWidget *widget = toolbox->widget(i);
-//                removedItems.insert(i, qMakePair(itemName, widget));
-//
-//                // Remove item from toolbox but don't delete the widget
-//                toolbox->removeItem(i);
-//            }
-//        }
-//    }
-//}
-
-class PDFManager : public QMainWindow 
-{
-    Q_OBJECT
-  public:
-    PDFManager(QWidget *parent = nullptr);
-  private slots:
-    void handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category);
-    void addNewPDF(PDFCat &category);
-    void openPDF(PDFCat &cat, const QString &filePath);
-    void filterToolBoxItems();
-    void collapseAllToolBoxItems(QToolBox *toolbox);
-    void createMenu();
-    void serializeData();
-    void loadData();
-  public:
-    QMenu *fileMenu;
-    QAction *exitAction;
-    QWidget *centralWidget;
-    QVBoxLayout *vbox;
-    QToolBox *toolbox;
-    QLineEdit *searchBar;
-    std::vector<PDFCat> PDFcats;
-    QMap<QProcess *, QString> processToPDF;
-
-  protected:
-    void closeEvent(QCloseEvent *event) override 
-    {
-        QMessageBox::StandardButton reply = QMessageBox::question(
-            this, "Save Changes", "Do you want to save changes before exiting?",
-            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
-
-        if (reply == QMessageBox::Yes) 
-        {
-            if (serializeData()) 
-            {
-                event->accept();
-            } else {
-                QMessageBox::critical(this, "Error",
-                                      "Failed to save data. Close anyway?",
-                                      QMessageBox::Yes | QMessageBox::No);
-
-                if (QMessageBox::Yes) {
-                    event->accept();
-                } else {
-                    event->ignore();
-                }
-            }
-        } else if (reply == QMessageBox::No) {
-            event->accept();
-        } else {
-            event->ignore();
-        }
-    }
-};
-
 PDFManager::PDFManager(QWidget *parent)
 {
     setWindowTitle("PDF Manger");
     setWindowFlags(Qt::Window);
-    setWindowIcon(QIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\icon.png")); 
+#ifdef Q_OS_WIN
+    setWindowIcon(QIcon(QDir::currentPath() + 
+                  "\\" + "Images" + "\\" +  "icon.png")); 
+#endif 
 
+    PDFManager::setFont(defaultFont);
 
-    QFont *defaultFont;
-    QString fontPath = "C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\CaskaydiaCoveNerdFont-Regular.ttf";
-    int fontId = QFontDatabase::addApplicationFont(fontPath);
-
-    if (fontId != -1) 
-    {
-        QString fontFamily =
-            QFontDatabase::applicationFontFamilies(fontId).at(0);
-        defaultFont = new QFont(fontFamily, 18);
-    } else {
-        // Handle the error: the font could not be loaded
-        qWarning() << "Failed to load font from path:" << fontPath;
-        defaultFont = new QFont("Arial", 12);
-    }
-
-    QApplication::setFont(*defaultFont);
     resize(800, 400);
 
     centralWidget = new QWidget(this);
@@ -391,7 +36,7 @@ PDFManager::PDFManager(QWidget *parent)
 
     auto main_layout = new QVBoxLayout(centralWidget);
 
-    createMenu();
+    createMenuBar();
         
     searchBar = new QLineEdit(this);
     searchBar->setPlaceholderText("Search...");
@@ -401,6 +46,16 @@ PDFManager::PDFManager(QWidget *parent)
                      this, &PDFManager::filterToolBoxItems);
 
     main_layout->addWidget(searchBar);
+
+    QScrollArea *scrollArea = new QScrollArea(this);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setStyleSheet(
+        "QScrollArea {"
+        "    background-color: #1e1e1e;"   
+        "    border: none;"                
+        "}");
 
     toolbox = new QToolBox(this);
     toolbox->setStyleSheet(
@@ -421,64 +76,53 @@ PDFManager::PDFManager(QWidget *parent)
         "}"
     );
 
-    QScrollArea *scrollArea = new QScrollArea(this);
-    scrollArea->setFrameShape(QFrame::NoFrame);
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setStyleSheet(
-        "QScrollArea {"
-        "    background-color: #1e1e1e;"   
-        "    border: none;"                
-        "}");
-
-    PDFcats.push_back(PDFCat("Programming"));
-    PDFcats.push_back(PDFCat("Math"));
-    PDFcats.push_back(PDFCat("Science"));
-    PDFcats.push_back(PDFCat("Literature"));
-    PDFcats.push_back(PDFCat("Music"));
+    loadData();
 
     for (auto& cat : PDFcats)
     {
-        cat.container = new QWidget(this);
-        cat.container->setStyleSheet(
-            "QWidget {"
-            "    background-color: #1e1e1e;" 
-            "}");
-        cat.layout = new QVBoxLayout(cat.container);
-        cat.layout->setSpacing(5);   
-        cat.layout->setContentsMargins(30, 10, 30, 10);   
-
+        PDFManager::setupNewCat(cat);
         toolbox->addItem(cat.container, cat.category.c_str());
-
-        // Add and center an add button to add new pdfs
-        cat.addButton = new QPushButton("+");
-        cat.addButton->setFixedSize(30, 30);
-
-        auto centerLayout = new QHBoxLayout();
-        centerLayout->addStretch();
-        centerLayout->addWidget(cat.addButton);
-        centerLayout->addStretch();
-
-        cat.layout->addLayout(centerLayout);
-        // Add the "+" button before the stretch
-        cat.layout->addStretch(1);   
-
-        connect(cat.addButton, &QPushButton::clicked, this,
-                [this, &cat]() {
-                    this->addNewPDF(cat); 
-                });
     }
 
-    scrollArea->setWidget(toolbox);
-    
-    collapseAllToolBoxItems(toolbox);
+    QWidget *dummyWidget = new QWidget();
+    dummyWidget->setFixedHeight(0);
+    dummyWidget->setVisible(false);
 
+    dummyIndex = toolbox->addItem(dummyWidget, "");
+
+    PDFManager::setupToolBoxConnections(); 
+    scrollArea->setWidget(toolbox);
 
     main_layout->addWidget(scrollArea);
 }
 
+void PDFManager::setFont(QFont *&defaultFont) 
+{
+#ifdef Q_OS_WIN
+    QString fontPath = QDir::currentPath() 
+                       + "\\" + "Images" + "\\" 
+                       + "CaskaydiaCoveNerdFont-Regular.ttf";
+#endif
+
+    int fontId = QFontDatabase::addApplicationFont(fontPath);
+
+    if (fontId != -1) 
+    {
+        QString fontFamily = QFontDatabase::applicationFontFamilies(fontId).at(0);
+        defaultFont = new QFont(fontFamily, 18);
+    } 
+    else 
+    {
+        qWarning() << "Failed to load font from path:" << fontPath << ", a default font is used";
+        defaultFont = new QFont("Open Sans", 18);
+    }
+
+    QApplication::setFont(*defaultFont);
+}
+
 void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category) 
 {
+    
     QProcess* process = qobject_cast<QProcess*>(sender());
 
     if (!process) 
@@ -523,10 +167,12 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
             break;
         }
     }
+    
 }
 
 void PDFManager::addNewPDF(PDFCat& category) 
 {
+     
     QString filePath = QFileDialog::getOpenFileName(this, "Open PDF File",
                                                     QDir::homePath(), "PDF Files (*.pdf))");
 
@@ -579,10 +225,12 @@ void PDFManager::addNewPDF(PDFCat& category)
         int addButtonIndex = category.layout->indexOf(category.layout->itemAt(category.layout->count() - 2)->widget());
         category.layout->insertWidget(addButtonIndex, pdfButton);
     }
+    
 }
 
 void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
 {
+    
     QFileInfo fileInfo(filePath);
     QString fileName = fileInfo.fileName();
 
@@ -622,124 +270,9 @@ void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
     if (!process->waitForStarted()){
         QMessageBox::critical(this, "Error","Failed to start Process");
     }
+    
 }
-/* void pdfManager::openPDF(const QString &filePath)
-{
-    QString sumatraPath;
-    const QString CONFIG_FILE_PATH = QDir::homePath() + "/.pdfmanager/config.ini";
-    
-    // Check if config file exists
-    QFileInfo configFileInfo(CONFIG_FILE_PATH);
-    if (configFileInfo.exists()) {
-        // Read Sumatra path from config file
-        QSettings settings(CONFIG_FILE_PATH, QSettings::IniFormat);
-        sumatraPath = settings.value("Paths/SumatraPDF").toString();
-        
-        // Verify the path is still valid
-        if (!QFileInfo(sumatraPath).exists()) {
-            sumatraPath.clear(); // Path no longer valid, need to find it again
-        }
-    }
-    
-    // If path not found in config, check common installation location
-    if (sumatraPath.isEmpty()) {
-        QString commonPath = "C:\\Program Files\\SumatraPDF\\SumatraPDF.exe";
-        if (QFileInfo(commonPath).exists()) {
-            sumatraPath = commonPath;
-        } else {
-            commonPath = "C:\\Program Files (x86)\\SumatraPDF\\SumatraPDF.exe";
-            if (QFileInfo(commonPath).exists()) {
-                sumatraPath = commonPath;
-            } else {
-                // Check in AppData location
-                commonPath = QDir::homePath() + "\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe";
-                if (QFileInfo(commonPath).exists()) {
-                    sumatraPath = commonPath;
-                }
-            }
-        }
-        
-        // If still not found, prompt user
-        if (sumatraPath.isEmpty()) {
-            QMessageBox msgBox;
-            msgBox.setWindowTitle("SumatraPDF Not Found");
-            msgBox.setText("SumatraPDF is required to view PDF files.");
-            msgBox.setInformativeText("Would you like to locate SumatraPDF on your system or download it?");
-            QPushButton *locateButton = msgBox.addButton("Locate", QMessageBox::ActionRole);
-            QPushButton *downloadButton = msgBox.addButton("Download", QMessageBox::ActionRole);
-            QPushButton *cancelButton = msgBox.addButton(QMessageBox::Cancel);
-            
-            msgBox.exec();
-            
-            if (msgBox.clickedButton() == locateButton) {
-                sumatraPath = QFileDialog::getOpenFileName(this,
-                    "Locate SumatraPDF Executable", 
-                    QDir::homePath(),
-                    "Executable Files (*.exe)");
-                
-                if (sumatraPath.isEmpty()) {
-                    QMessageBox::warning(this, "Operation Cancelled", "PDF viewer path not set.");
-                    return;
-                }
-            } 
-            else if (msgBox.clickedButton() == downloadButton) {
-                QDesktopServices::openUrl(QUrl("https://www.sumatrapdfreader.org/download-free-pdf-viewer"));
-                QMessageBox::information(this, "Download Started", 
-                    "Please install SumatraPDF and try again.\n"
-                    "After installation, you will be prompted to locate the executable.");
-                return;
-            }
-            else {
-                QMessageBox::warning(this, "Operation Cancelled", "PDF viewer path not set.");
-                return;
-            }
-        }
-        
-        // Save the path to config file
-        QDir configDir(QFileInfo(CONFIG_FILE_PATH).path());
-        if (!configDir.exists()) {
-            configDir.mkpath(".");
-        }
-        
-        QSettings settings(CONFIG_FILE_PATH, QSettings::IniFormat);
-        settings.setValue("Paths/SumatraPDF", sumatraPath);
-        settings.sync();
-    }
-    
-    // Now open the PDF with the found path
-    QFileInfo fileInfo(filePath);
-    QString fileName = fileInfo.fileName();
-    QProcess* process = new QProcess(this);
-    m_processToFile[process] = fileName;
-    process->setProperty("autoDelete", true);
-    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &pdfManager::handleFinished);
-    connect(process, &QObject::destroyed, this,
-    [this, process]() {
-        m_processToFile.remove(process);
-    });
-    
-    QStringList arguments;
-    arguments << filePath;
-    
-    // If we have a stored page number, open to that page
-    for (const auto& pdf : pdf_files) 
-    {
-        if (QString::fromStdString(pdf.file_name) == fileName && pdf.page_num > 0) {
-            arguments << QString("-view");
-            arguments << QString("single page");
-            arguments << QString("-new-window");
-            arguments << QString("-page");
-            arguments << QString::number(pdf.page_num);
-            break;
-        }
-    }
-    
-    process->start(sumatraPath, arguments);
-    if (!process->waitForStarted()){
-        QMessageBox::critical(this, "Error", "Failed to start SumatraPDF.");
-    }
-} */
+
 void PDFManager::filterToolBoxItems() 
 {
     QString searchText = searchBar->text();
@@ -776,42 +309,198 @@ void PDFManager::filterToolBoxItems()
     }
 }
 
-void PDFManager::collapseAllToolBoxItems(QToolBox *toolbox) 
+void PDFManager::collapseAllToolBoxItems() 
 {
-    QWidget *dummyWidget = new QWidget();
-    dummyWidget->setFixedHeight(0);
-    dummyWidget->setVisible(false);
-
-    int dummyIndex = toolbox->addItem(dummyWidget, "");
-
     toolbox->setCurrentIndex(dummyIndex);
-
-    toolbox->setItemText(dummyIndex, "");
+    toolbox->setItemText(dummyIndex, "+");
 }
 
-void PDFManager::createMenu() 
+void PDFManager::setupToolBoxConnections() 
 {
-    fileMenu = menuBar()->addMenu(tr("&File"));
+    disconnect(toolbox, &QToolBox::currentChanged, this,
+               &PDFManager::onToolBoxItemChanged);
 
-    exitAction = fileMenu->addAction(tr("E&xit"));
-    exitAction->setIcon(QIcon(":/icons/exit.png"));
-    exitAction->setShortcut(QKeySequence::Quit); 
+    connect(toolbox, &QToolBox::currentChanged, this,
+            &PDFManager::onToolBoxItemChanged);
+
+    for (QWidget *w : toolbox->findChildren<QWidget *>()) {
+        if (w->inherits("QToolBoxButton")) {
+            QAbstractButton *button = qobject_cast<QAbstractButton *>(w);
+            disconnect(button, &QAbstractButton::clicked, this,
+                       &PDFManager::onToolBoxItemClicked);
+        }
+    }
+
+    for (QWidget *w : toolbox->findChildren<QWidget *>()) {
+        if (w->inherits("QToolBoxButton")) {
+            QAbstractButton *button = qobject_cast<QAbstractButton *>(w);
+            connect(button, &QAbstractButton::clicked, this,
+                    &PDFManager::onToolBoxItemClicked);
+        }
+    }
+}
+
+void PDFManager::onToolBoxItemClicked(bool checked) 
+{
+    qDebug() << "Item clicked\n";
+
+    if (toolbox->currentIndex() == dummyIndex)
+    {
+        onAddCategoryClicked();
+    }
+
+    if (toolBoxChanged) 
+    {
+        toolBoxChanged = false;
+        return;
+    }
+
+    collapseAllToolBoxItems();
+}
+
+void PDFManager::onToolBoxItemChanged(int index) 
+{
+    qDebug() << "ToolBoxItem changed !, index : " << index
+             << "\n ";
+
+    toolBoxChanged = true;
+    lastIndex = index;
+}
+
+void PDFManager::onAddCategoryClicked()
+{
+    bool ok;
+    QString categoryName 
+            = QInputDialog::getText( this, "Add New Category",
+                "Enter category name:", QLineEdit::Normal, "", &ok);
+
+    if (ok && !categoryName.isEmpty()) 
+    {
+        QWidget *dummyWidget = toolbox->widget(dummyIndex);
+        toolbox->removeItem(dummyIndex);
+
+        PDFCat newCat(categoryName.toStdString());
+        PDFcats.push_back(newCat);
+
+        auto &cat = PDFcats.back();
+
+        PDFManager::setupNewCat(cat);
+
+        toolbox->addItem(cat.container, QString::fromStdString(cat.category));
+
+        dummyIndex = toolbox->addItem(dummyWidget, "");
+        toolbox->setItemText(dummyIndex, "");
+
+        setupToolBoxConnections();
+
+        toolbox->setCurrentIndex(dummyIndex - 1);
+    }
+}
+
+void PDFManager::setupNewCat(PDFCat& cat)
+{
+    cat.container = new QWidget(this);
+    cat.container->setStyleSheet("QWidget {"
+                                 "    background-color: #1e1e1e;"
+                                 "}");
+    cat.layout = new QVBoxLayout(cat.container);
+    cat.layout->setSpacing(5);
+    cat.layout->setContentsMargins(30, 10, 30, 10);
+
+    // Add and center an add button to add new pdfs
+    cat.addButton = new QPushButton("+");
+    cat.addButton->setFixedSize(30, 30);
+
+    auto centerLayout = new QHBoxLayout();
+    centerLayout->addStretch();
+    centerLayout->addWidget(cat.addButton);
+    centerLayout->addStretch();
+
+    cat.layout->addLayout(centerLayout);
+    cat.layout->addStretch(1);
+
+    connect(cat.addButton, &QPushButton::clicked, this,
+            [this, &cat]() { this->addNewPDF(cat); });
+}
+
+void PDFManager::createMenuBar() 
+{
+    menuBar = QMainWindow::menuBar();
+
+    fileMenu = menuBar->addMenu("&File");
+
+    QAction *newAction =
+        fileMenu->addAction(QIcon::fromTheme("document-new"), "&New");
+    newAction->setShortcut(QKeySequence::New);
+    connect(newAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+
+    QAction *openAction =
+        fileMenu->addAction(QIcon::fromTheme("document-open"), "&Open...");
+    openAction->setShortcut(QKeySequence::Open);
+    connect(openAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+
+    QAction *saveAction =
+        fileMenu->addAction(QIcon::fromTheme("document-save"), "&Save");
+    saveAction->setShortcut(QKeySequence::Save);
+    connect(saveAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+
+    exitAction = fileMenu->addAction(QIcon::fromTheme("application-exit"), "E&xit");
+    exitAction->setShortcut(QKeySequence::Quit);
+    connect(exitAction, &QAction::triggered, qApp, &QApplication::quit);
 
     fileMenu->addSeparator();
 
-    QAction *openAction = fileMenu->addAction(tr("&Open"));
-    openAction->setIcon(QIcon(":/icons/open.png")); 
-    openAction->setShortcut(QKeySequence::Open);
+        // Edit menu
+    editMenu = menuBar->addMenu("&Edit");
 
+    QAction *undoAction =
+        editMenu->addAction(QIcon::fromTheme("edit-undo"), "&Undo");
+    undoAction->setShortcut(QKeySequence::Undo);
+    connect(undoAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
 
-    connect(exitAction, &QAction::triggered, 
-            qApp, &QApplication::quit);
+    QAction *redoAction =
+        editMenu->addAction(QIcon::fromTheme("edit-redo"), "&Redo");
+    redoAction->setShortcut(QKeySequence::Redo);
+    connect(redoAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
 
-    menuBar()->setStyleSheet(
+    editMenu->addSeparator();
+
+    QAction *cutAction =
+        editMenu->addAction(QIcon::fromTheme("edit-cut"), "Cu&t");
+    cutAction->setShortcut(QKeySequence::Cut);
+    connect(cutAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+
+    QAction *copyAction =
+        editMenu->addAction(QIcon::fromTheme("edit-copy"), "&Copy");
+    copyAction->setShortcut(QKeySequence::Copy);
+    connect(copyAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+
+    QAction *pasteAction =
+        editMenu->addAction(QIcon::fromTheme("edit-paste"), "&Paste");
+    pasteAction->setShortcut(QKeySequence::Paste);
+    connect(pasteAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+
+    // View menu
+    viewMenu = menuBar->addMenu("&View");
+
+        // Help menu
+    helpMenu = menuBar->addMenu("&Help");
+
+    QAction *aboutAction =
+        helpMenu->addAction(QIcon::fromTheme("help-about"), "&About");
+    connect(aboutAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+
+    QFont menuFont("Open Sans", 18);
+    menuBar->setFont(*defaultFont);
+
+    foreach (QWidget *widget, menuBar->findChildren<QWidget *>()) {
+        widget->setFont(*defaultFont);
+    }
+    menuBar->setStyleSheet(
         "QMenuBar {"
         "    background-color: #2E3440;"   // Dark background
         "    color: #D8DEE9;"              // Light text
-        "    font-weight: bold;"
+        //"    font-weight: bold;"
         "    padding: 5px 10px;"
         "}"
         "QMenuBar::item {"
@@ -846,27 +535,39 @@ void PDFManager::createMenu()
         "}");
 }
 
-void PDFManager::serializeData() 
+void PDFManager::menuBarActionStub() 
 {
-    std::ofstream file("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\pdfmanager.conf");
-    if (!file.is_open()) {
+    qDebug() << "Action taken";
+}
+
+bool PDFManager::serializeData() 
+{
+    QString currentDirConfigPath = QDir::currentPath() + "\\" + "pdfmanager.conf";
+
+    std::ofstream file(currentDirConfigPath.toStdString());
+
+    if (!file.is_open()) 
+    {
         return false;
     }
+
     for (auto &cat : PDFcats) 
     {
-        out << cat.category << ", " << cat.PDFFiles.size() << "\n";
+        file << cat.category << ", " << cat.PDFFiles.size() << "\n";
 
-        for (const auto &pdf : cat.PDFFiles) {
-            out << pdf.file_name << ", " << pdf.file_path << ", " << pdf.page_num
+        for (const auto &pdf : cat.PDFFiles) 
+        {
+            file << pdf.file_name << ", " << pdf.file_path << ", " << pdf.page_num
                 << "\n";
         }
 
-
-        out << "\n";
+        file << "\n";
     }
+    
+    return true;
 }
 
-bool deserializePDFCat(std::istream &in, PDFCat &cat) 
+bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat) 
 {
     std::string line;
 
@@ -919,13 +620,16 @@ bool deserializePDFCat(std::istream &in, PDFCat &cat)
     }
 
     std::getline(in, line);
-
+    
     return true;
 }
 
 void PDFManager::loadData() 
 {
-    std::ofstream in("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\pdfmanager.conf");
+    QString currentDirConfigPath = QDir::currentPath() + "\\" + "pdfmanager.conf";
+
+    std::ifstream in(currentDirConfigPath.toStdString());
+
     if (!in.is_open()) {
         return;
     }
@@ -950,6 +654,118 @@ void PDFManager::loadData()
     }
 }
 
+void PDFManager::loadConfig()
+{
+    
+    QString sumatraPath;
+    const QString CONFIG_FILENAME = "pdfmanager_config.ini";
+    QString currentDirConfigPath = QDir::currentPath() + "/" + CONFIG_FILENAME;
+
+    QFileInfo configFileInfo(currentDirConfigPath);
+
+    if (configFileInfo.exists())
+    {
+        QSettings settings(currentDirConfigPath, QSettings::IniFormat);
+        sumatraPath = settings.value("Paths/SumatraPDF").toString();
+
+        if (!QFileInfo(sumatraPath).exists()) {
+            sumatraPath.clear(); 
+        }
+    }
+
+    // No configuration, create one
+    if (sumatraPath.isEmpty()) 
+    {
+        QString commonPath = QDir::homePath() + "\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe";
+        if (QFileInfo(commonPath).exists()) {
+            sumatraPath = commonPath;
+        }
+
+        // SumatraPDF doesnt exist in the default location
+        if (sumatraPath.isEmpty()) 
+        {
+            QMessageBox msgBox;
+            msgBox.setWindowTitle("SumatraPDF Not Found");
+            msgBox.setText("SumatraPDF is required to view PDF files.");
+            msgBox.setInformativeText("Would you like to locate SumatraPDF on "
+                                      "your system or download it?");
+            QPushButton *locateButton = msgBox.addButton("Locate", QMessageBox::ActionRole);
+            QPushButton *downloadButton = msgBox.addButton("Download", QMessageBox::ActionRole);
+            QPushButton *cancelButton = msgBox.addButton(QMessageBox::Cancel);
+
+            msgBox.exec();
+
+            if (msgBox.clickedButton() == locateButton) 
+            {
+                sumatraPath = QFileDialog::getOpenFileName(this, "Locate SumatraPDF Executable", QDir::homePath(), "Executable Files (*.exe)");
+
+                if (sumatraPath.isEmpty()) {
+                    QMessageBox::warning(this, "Operation Cancelled",
+                                         "PDF viewer path not set.");
+                    return;
+                }
+            } 
+            else if (msgBox.clickedButton() == downloadButton) 
+            {
+                QDesktopServices::openUrl(
+                    QUrl("https://www.sumatrapdfreader.org/"
+                         "download-free-pdf-viewer"));
+                QMessageBox::information(this,
+                    "Download SumatraPDF",
+                    "Please install SumatraPDF and try again.\n"
+                    "After installation, you will be prompted to locate the "
+                    "executable.");
+                return;
+            } 
+            else 
+            {
+                QMessageBox::warning(this, "Operation Cancelled",
+                                     "PDF viewer path not set.");
+                return;
+            }
+        }
+
+        // Save the path to config file
+        QDir configDir(QFileInfo(currentDirConfigPath).path());
+        if (!configDir.exists()) {
+            configDir.mkpath(".");
+        }
+
+        QSettings settings(currentDirConfigPath, QSettings::IniFormat);
+        settings.setValue("Paths/SumatraPDF", sumatraPath);
+        settings.sync();
+    }
+    
+}
+
+void PDFManager::closeEvent(QCloseEvent *event) 
+{
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this, "Save Changes", "Do you want to save changes before exiting?",
+        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+
+    if (reply == QMessageBox::Yes) {
+        if (serializeData()) {
+            event->accept();
+        } else {
+            QMessageBox::critical(this, "Error",
+                                  "Failed to save data. Close anyway?",
+                                  QMessageBox::Yes | QMessageBox::No);
+
+            if (QMessageBox::Yes) {
+                event->accept();
+            } else {
+                event->ignore();
+            }
+        }
+    } else if (reply == QMessageBox::No) {
+        event->accept();
+    } else {
+        event->ignore();
+    }
+    
+
+}
 
 int main(int argc, char *argv[]) 
 {
@@ -960,5 +776,3 @@ int main(int argc, char *argv[])
 
     return app.exec();
 }
-
-#include <main.moc>
