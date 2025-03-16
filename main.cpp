@@ -38,14 +38,9 @@ PDFManager::PDFManager(QWidget *parent)
 
     createMenuBar();
         
-    searchBar = new QLineEdit(this);
-    searchBar->setPlaceholderText("Search...");
-    searchBar->setFont(*defaultFont);
+    createSearchbar();
 
-    QObject::connect(searchBar, &QLineEdit::textChanged,
-                     this, &PDFManager::filterToolBoxItems);
-
-    main_layout->addWidget(searchBar);
+   
 
     QScrollArea *scrollArea = new QScrollArea(this);
     scrollArea->setFrameShape(QFrame::NoFrame);
@@ -74,6 +69,11 @@ PDFManager::PDFManager(QWidget *parent)
         "    background-color: #6272a4;"  
         
         "}"
+        "QToolBox::tab:disabled {"         // Style for disabled tabs
+        "    background-color: #1a1a1a;"   // Darker background for disabled
+                                           // state
+        "    color: #6d6d6d;"              // Grayed out text for disabled state
+        "}"
     );
 
     loadData();
@@ -82,6 +82,24 @@ PDFManager::PDFManager(QWidget *parent)
     {
         PDFManager::setupNewCat(cat);
         toolbox->addItem(cat.container, cat.category.c_str());
+        for (auto& pdf : cat.PDFFiles)
+        {
+            auto pdfButton = new QPushButton(QString::fromStdString(pdf.file_name));
+            pdfButton->setSizePolicy(QSizePolicy::Expanding,
+                                     QSizePolicy::Expanding);
+
+            connect(pdfButton, &QPushButton::clicked, this,
+                [this, filePath = pdf.file_path, &cat]() { 
+                    openPDF(cat, QString::fromStdString(filePath)); 
+                });
+
+            pdf.button = pdfButton;
+
+            int addButtonIndex = cat.layout->indexOf(
+                cat.layout->itemAt(cat.layout->count() - 2)->widget()
+            );
+            cat.layout->insertWidget(addButtonIndex, pdfButton);
+        }
     }
 
     QWidget *dummyWidget = new QWidget();
@@ -93,6 +111,7 @@ PDFManager::PDFManager(QWidget *parent)
     PDFManager::setupToolBoxConnections(); 
     scrollArea->setWidget(toolbox);
 
+    main_layout->addWidget(searchBar);
     main_layout->addWidget(scrollArea);
 }
 
@@ -120,9 +139,18 @@ void PDFManager::setFont(QFont *&defaultFont)
     QApplication::setFont(*defaultFont);
 }
 
+void PDFManager::createSearchbar()
+{
+    searchBar = new QLineEdit(this);
+    searchBar->setPlaceholderText("Search...");
+    searchBar->setFont(*defaultFont);
+
+    QObject::connect(searchBar, &QLineEdit::textChanged, 
+                     this, &PDFManager::filterToolBoxItems);
+}
+
 void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category) 
 {
-    
     QProcess* process = qobject_cast<QProcess*>(sender());
 
     if (!process) 
@@ -172,17 +200,29 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
 
 void PDFManager::addNewPDF(PDFCat& category) 
 {
-     
-    QString filePath = QFileDialog::getOpenFileName(this, "Open PDF File",
-                                                    QDir::homePath(), "PDF Files (*.pdf))");
+    if (LastBrowsedPath.isEmpty()) 
+    {
+        LastBrowsedPath = QFileDialog::getOpenFileName(
+            this, "Open PDF File", QDir::homePath(), "PDF Files (*.pdf))");
+    } 
+    else 
+    {
+        LastBrowsedPath = QFileDialog::getOpenFileName(
+            this, "Open PDF File", LastBrowsedPath, "PDF Files (*.pdf))");
+    }    
 
-    qInfo() << "Selected file path:" << filePath;
+    qInfo() << "Selected file path:" << LastBrowsedPath;
 
-    if (filePath.isEmpty()){
+    if (LastBrowsedPath.isEmpty()) {
         qInfo() << "No file selected.";
         return;
     }
 
+    setupNewPDF(category, LastBrowsedPath);
+}
+
+void PDFManager::setupNewPDF(PDFCat &category, QString &filePath) 
+{
     QFileInfo fileInfo(filePath);
     QString fileName = fileInfo.fileName();
 
@@ -190,42 +230,34 @@ void PDFManager::addNewPDF(PDFCat& category)
 
     // check whether this pdf already exists or not
     bool isDuplicate = false;
-    for (auto &pdf : category.PDFFiles) 
-    {
-        if (pdf.file_name == fileName.toStdString()) 
-        {
+    for (auto &pdf : category.PDFFiles) {
+        if (pdf.file_name == fileName.toStdString()) {
             isDuplicate = true;
-            QMessageBox::information(
-                this,
-                "Duplicate File",
-                "This PDF file is already in your list."
-            );
+            QMessageBox::information(this, "Duplicate File",
+                                     "This PDF file is already in your list.");
             break;
         }
     }
 
-    if(!isDuplicate)
-    {
+    if (!isDuplicate) {
         auto pdfButton = new QPushButton(fileName);
         pdfButton->setSizePolicy(QSizePolicy::Expanding,
-                                 QSizePolicy::Expanding); 
-            
-        connect(pdfButton, &QPushButton::clicked, this, 
-        [this, filePath, &category](){
-            openPDF(category, filePath);
-        });
+                                 QSizePolicy::Expanding);
+
+        connect(pdfButton, &QPushButton::clicked, this,
+                [this, filePath, &category]() { openPDF(category, filePath); });
 
         PDFInfo newPDF;
         newPDF.file_name = fileName.toStdString();
         newPDF.file_path = filePath.toStdString();
         newPDF.button = pdfButton;
-            
+
         category.PDFFiles.push_back(newPDF);
-            
-        int addButtonIndex = category.layout->indexOf(category.layout->itemAt(category.layout->count() - 2)->widget());
+
+        int addButtonIndex = category.layout->indexOf(
+            category.layout->itemAt(category.layout->count() - 2)->widget());
         category.layout->insertWidget(addButtonIndex, pdfButton);
     }
-    
 }
 
 void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
@@ -312,7 +344,7 @@ void PDFManager::filterToolBoxItems()
 void PDFManager::collapseAllToolBoxItems() 
 {
     toolbox->setCurrentIndex(dummyIndex);
-    toolbox->setItemText(dummyIndex, "+");
+    toolbox->setItemText(dummyIndex, "");
 }
 
 void PDFManager::setupToolBoxConnections() 
@@ -763,8 +795,6 @@ void PDFManager::closeEvent(QCloseEvent *event)
     } else {
         event->ignore();
     }
-    
-
 }
 
 int main(int argc, char *argv[]) 

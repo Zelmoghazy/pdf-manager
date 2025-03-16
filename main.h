@@ -91,6 +91,7 @@ class PDFManager : public QMainWindow
     void handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category);
     void addNewPDF(PDFCat &category);
     void openPDF(PDFCat &cat, const QString &filePath);
+    void createSearchbar();
     void filterToolBoxItems();
     void collapseAllToolBoxItems();
     void onToolBoxItemChanged(int index);
@@ -98,6 +99,8 @@ class PDFManager : public QMainWindow
     void onAddCategoryClicked();
     void setupToolBoxConnections(); 
     void setupNewCat(PDFCat &cat);
+    void setupNewPDF(PDFCat &category,
+                                 QString &filePath); 
     void createMenuBar();
     bool serializeData();
     bool deserializePDFCat(std::istream &in, PDFCat &cat);
@@ -124,4 +127,5 @@ class PDFManager : public QMainWindow
     QLineEdit *searchBar;
     std::vector<PDFCat> PDFcats;
     QMap<QProcess *, QString> processToPDF;
+    QString LastBrowsedPath;
 };
