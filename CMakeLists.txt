@@ -1,27 +1,43 @@
-cmake_minimum_required(VERSION 3.10)
-project(StaticQtApp)
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+cmake_minimum_required(VERSION 3.16)
+project(windowlayout LANGUAGES CXX)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_PREFIX_PATH "C:/Qt/6.8.0/6.8.2_Static_msvc") 
-add_definitions(-DQT_STATIC) 
 
-# use the static runtime library
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
-endif()
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
-find_package(Qt6 COMPONENTS Core Widgets Gui REQUIRED)
+qt_standard_project_setup()
 
-add_executable(StaticQtApp 
+qt_add_executable(windowlayout
     main.cpp 
     main.h
     pdfinfo.cpp
-    pdfinfo.h)
+    pdfinfo.h
+)
 
-target_link_libraries(StaticQtApp PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui)
+set_target_properties(windowlayout PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
+)
 
-if(WIN32)
-    find_library(QT_QWINDOWS_PLUGIN qwindows PATHS "${CMAKE_PREFIX_PATH}/plugins/platforms")
-    target_link_libraries(StaticQtApp PRIVATE ${QT_QWINDOWS_PLUGIN})
-endif()
+target_link_libraries(windowlayout PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+)
+
+install(TARGETS windowlayout
+    BUNDLE  DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+qt_generate_deploy_app_script(
+    TARGET windowlayout
+    OUTPUT_SCRIPT deploy_script
+    NO_UNSUPPORTED_PLATFORM_ERROR
+)
+install(SCRIPT ${deploy_script})

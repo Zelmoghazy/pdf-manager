@@ -37,7 +37,9 @@
 
 #include "pdfinfo.h"
 
+#ifdef QT_STATIC
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin) // Windows
+#endif   // QT_STATIC
 
 #if 0
 QMap<int, QPair<QString, QWidget *>> removedItems;
@@ -102,11 +104,15 @@ class PDFManager : public QMainWindow
     void setupNewPDF(PDFCat &category,
                                  QString &filePath); 
     void createMenuBar();
+    void createCategoriesArea();
     bool serializeData();
     bool deserializePDFCat(std::istream &in, PDFCat &cat);
     void loadData();
+    void addData();
     void loadConfig();
     void menuBarActionStub();
+    void trim(const std::string& str, std::string::const_iterator& start, std::string::const_iterator& end);
+    std::string trim(const std::string& str); 
   protected:
     void closeEvent(QCloseEvent *event) override;
   public:
@@ -116,9 +122,9 @@ class PDFManager : public QMainWindow
     QMenu *viewMenu;
     QMenu *helpMenu;
 
-    QAction *exitAction;
     QWidget *centralWidget;
     QVBoxLayout *vbox;
+    QScrollArea *categoriesArea;
     QToolBox *toolbox;
     int dummyIndex = -1;
     int lastIndex = -1;
@@ -127,5 +133,7 @@ class PDFManager : public QMainWindow
     QLineEdit *searchBar;
     std::vector<PDFCat> PDFcats;
     QMap<QProcess *, QString> processToPDF;
+    QAction *exitAction;
     QString LastBrowsedPath;
+    QString configPath = "pdfmanager.conf";
 };
