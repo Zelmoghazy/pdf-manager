@@ -3,6 +3,8 @@
 #include <QWidget>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QLabel>
+#include <QString>
 
 #include <iostream>
 #include <fstream>
@@ -13,37 +15,42 @@
 #include <regex>
 #include <algorithm>
 
-#define MAX(a, b) (a > b) ? a : b
+#include "custom_button.hpp"
+#include "utils.hpp"
 
 struct PDFInfo
 {
-    bool found = false;
-    std::string file_name;
-    std::string file_path;
-    int page_num = 0;
-    std::string mode;
+    std::string file_name;  // The represented name in the UI, the user can edit it to whatever
+    std::string file_path;  // What actually distinguishes the file
 
-    QPushButton *button = nullptr;
+    bool found = false;     // whether it was found while parsing
+    int page_num = 0;       // last opened page
+
+    std::string mode;       // to be used to add options like open in full screen or presentation mode or whatever
+
+    WordWrapButton *button = nullptr;
 
     PDFInfo() {}
-    PDFInfo(std::string filename) : file_name(filename){}
+    PDFInfo(const std::string filename) : file_name(filename){}
 
     void parseSumatraSettings(const std::string &settings_path);
-    
     // For linux, each pdf file has a corresponding small xml file so regex shouldnt slow things that much and its easier
     int parseOkularSettings(const std::string& settings_path);
-
 };
-
 
 struct PDFCat
 {
     std::string category;
+
+    // each category has a number of pdfs 
     std::vector<PDFInfo> PDFFiles;
-    QWidget *container;
-    QVBoxLayout *layout;
-    QPushButton *addButton;
+
+    QWidget     *container = nullptr;
+    QVBoxLayout *layout = nullptr;
+
+    // to add new categories
+    QPushButton *addButton = nullptr;
 
     PDFCat() {}
-    PDFCat(const std::string name) : category(name){}
+    PDFCat(const std::string cat_name) : category(cat_name){}
 };

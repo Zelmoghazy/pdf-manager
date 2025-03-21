@@ -16,6 +16,10 @@ qt_add_executable(windowlayout
     main.h
     pdfinfo.cpp
     pdfinfo.h
+    utils.cpp
+    utils.hpp
+    custom_button.cpp
+    custom_button.hpp
 )
 
 set_target_properties(windowlayout PROPERTIES

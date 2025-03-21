@@ -11,7 +11,7 @@ set INCLUDE_DIRS=/I..\catch2\
 set LIBRARY_DIRS=/LIBPATH:..\catch2
 set LIBRARIES=user32.lib gdi32.lib shell32.lib kernel32.lib catch2.lib
 set SRC_FILES=..\test.cpp 
-set C_FLAGS=/Zi /EHsc /W4 /MD /nologo /std:c++17 
+set C_FLAGS=/Zi /EHsc /O2 /W4 /MD /nologo /std:c++17 
 set L_FLAGS=/SUBSYSTEM:WINDOWS
 
 pushd .\build

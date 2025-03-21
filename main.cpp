@@ -1,26 +1,9 @@
 #include "main.h"
-
-static QWidget *embedIntoHBoxLayout(QWidget *w, int margin = 5)
-{
-    auto result = new QWidget;
-    auto layout = new QHBoxLayout(result);
-    layout->setContentsMargins(margin, margin, margin, margin);
-    layout->addWidget(w);
-    return result;
-}
-
-static QWidget *embedIntoVBoxLayout(QWidget *w, int margin = 5) 
-{
-    auto result = new QWidget;
-    auto layout = new QVBoxLayout(result);
-    layout->setContentsMargins(margin, margin, margin, margin);
-    layout->addWidget(w);
-    return result;
-}
+#include "utils.hpp"
 
 PDFManager::PDFManager(QWidget *parent)
 {
-    setWindowTitle("PDF Manger");
+    setWindowTitle("PDF Manager");
     setWindowFlags(Qt::Window);
     resize(800, 400);
 
@@ -28,7 +11,7 @@ PDFManager::PDFManager(QWidget *parent)
     setWindowIcon(QIcon(QDir::currentPath() + "\\" + "Images" + "\\" +  "icon.png")); 
 #endif 
 
-    PDFManager::setFont(defaultFont);
+    PDFManager::setFont();
 
     centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
@@ -41,15 +24,56 @@ PDFManager::PDFManager(QWidget *parent)
     createCategoriesArea();
 
     loadData();
-    addData();
-
-    PDFManager::setupToolBoxConnections(); 
+    initApp();
 
     main_layout->addWidget(searchBar);
     main_layout->addWidget(categoriesArea);
 }
 
-void PDFManager::setFont(QFont *&defaultFont) 
+void PDFManager::initApp() 
+{
+    for (auto& cat : PDFcats)
+    {
+        PDFManager::setupNewCat(cat);
+        toolbox->addItem(cat.container, cat.category.c_str());
+
+        for (auto& pdf : cat.PDFFiles)
+        {
+            pdf.button = new WordWrapButton(QString("%1 (Page %2)")
+                                            .arg(QString::fromStdString(pdf.file_name))
+                                            .arg(pdf.page_num), cat.container);
+
+            pdf.button->setSizePolicy(QSizePolicy::Expanding,
+                                     QSizePolicy::Expanding);
+
+            connect(pdf.button, &WordWrapButton::clicked, this,
+                [this, filePath = pdf.file_path, button = cat.addButton]() 
+                { 
+                    for (auto& myCat : PDFcats) {
+                        if (myCat.addButton == button) {
+                            openPDF(myCat, QString::fromStdString(filePath)); 
+                            break;
+                        }
+                    }
+                });
+
+            int addButtonIndex = cat.layout->indexOf(
+                cat.layout->itemAt(cat.layout->count() - 2)->widget()
+            );
+            cat.layout->insertWidget(addButtonIndex, pdf.button);
+        }
+    }
+
+    QWidget *dummyWidget = new QWidget();
+    dummyWidget->setFixedHeight(0);
+    dummyWidget->setVisible(false);
+
+    dummyIndex = toolbox->addItem(dummyWidget, "");
+
+    setupToolBoxConnections(); 
+}
+
+void PDFManager::setFont() 
 {
 #ifdef Q_OS_WIN
     QString fontPath = QDir::currentPath() 
@@ -71,397 +95,6 @@ void PDFManager::setFont(QFont *&defaultFont)
     }
 
     QApplication::setFont(*defaultFont);
-}
-
-void PDFManager::createSearchbar()
-{
-    searchBar = new QLineEdit(this);
-    searchBar->setPlaceholderText("Search...");
-    searchBar->setFont(*defaultFont);
-
-    QObject::connect(searchBar, &QLineEdit::textChanged, 
-                     this, &PDFManager::filterToolBoxItems);
-}
-
-void PDFManager::createCategoriesArea() 
-{
-    categoriesArea = new QScrollArea(this);
-    categoriesArea->setFrameShape(QFrame::NoFrame);
-    categoriesArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    categoriesArea->setWidgetResizable(true);
-    categoriesArea->setStyleSheet(
-        "QScrollArea {"
-        "    background-color: #1e1e1e;"   
-        "    border: none;"                
-        "}");
-
-    toolbox = new QToolBox(this);
-    toolbox->setStyleSheet(
-        "QToolBox {"
-        "    background-color: #1e1e1e;"  
-        "}"
-        "QToolBox::tab {"
-        "    background-color: #282a36;"   
-        "    color: white;"                
-        "    border-radius: 4px;"          
-        "}"
-        "QToolBox::tab:selected {"         
-        "    background-color: #44475a;"   
-        "}"
-        "QToolBox::tab:hover {"            
-        "    background-color: #6272a4;"  
-        
-        "}"
-        "QToolBox::tab:disabled {"         // Style for disabled tabs
-        "    background-color: #1a1a1a;"   
-        "    color: #6d6d6d;"              
-        "}"
-    );
-
-    categoriesArea->setWidget(toolbox);
-}
-
-void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category) 
-{
-    QProcess* process = qobject_cast<QProcess*>(sender());
-
-    if (!process) 
-        return;
-        
-    if (exitStatus == QProcess::CrashExit) 
-    {
-        QMessageBox::critical(this, "Process Failed",
-                                    "The running process crashed!");
-        return;
-    }
-        
-    if (exitCode != 0) 
-    {
-        // Sumatra reuses the same process so just update the number when all windows are closed
-        qDebug() << "Exit code : "
-                 << exitCode << "\n";
-        return;
-    } 
-    
-    for (auto it = processToPDF.begin(); it != processToPDF.end(); ++it) 
-    {
-        QProcess *process = it.key();      // Get the QProcess pointer (key)
-
-        QString fileName = it.value();
-        if (fileName.isEmpty()) 
-            continue;
-
-        for (auto& pdf : category.PDFFiles) 
-        {
-            if (QString::fromStdString(pdf.file_name) == fileName) 
-            {
-                PDFInfo tempPdf(pdf.file_name);
-                tempPdf.parseSumatraSettings("C:\\Users\\zezo_\\AppData\\Local\\SumatraPDF\\SumatraPDF-settings.txt");
-                
-                pdf.page_num = tempPdf.page_num;
-                
-                if (pdf.button) 
-                {
-                    pdf.button->setText(QString("%1 (Page %2)")
-                        .arg(QString::fromStdString(pdf.file_name))
-                        .arg(pdf.page_num));
-                }
-                
-                qDebug() << "Updated page number for" << QString::fromStdString(pdf.file_name) 
-                            << "to page:" << pdf.page_num;
-                break;
-            }
-        }
-
-        qDebug() << "Process:" << process << "PDF Name:" << fileName;
-    }
-    processToPDF.clear();
-}
-
-void PDFManager::addNewPDF(PDFCat& category) 
-{
-    if (LastBrowsedPath.isEmpty()) 
-    {
-        LastBrowsedPath = QFileDialog::getOpenFileName(
-            this, "Open PDF File", QDir::homePath(), "PDF Files (*.pdf))");
-    } 
-    else 
-    {
-        LastBrowsedPath = QFileDialog::getOpenFileName(
-            this, "Open PDF File", LastBrowsedPath, "PDF Files (*.pdf))");
-    }    
-
-    qInfo() << "Selected file path:" << LastBrowsedPath;
-
-    if (LastBrowsedPath.isEmpty()) {
-        qInfo() << "No file selected.";
-        return;
-    }
-
-    setupNewPDF(category, LastBrowsedPath);
-}
-
-void PDFManager::setupNewPDF(PDFCat &category, QString &filePath) 
-{
-    QFileInfo fileInfo(filePath);
-    QString fileName = fileInfo.fileName();
-
-    qInfo() << filePath << "," << fileName;
-
-    // check whether this pdf already exists or not
-    bool isDuplicate = false;
-    for (auto &pdf : category.PDFFiles) {
-        if (pdf.file_name == fileName.toStdString()) {
-            isDuplicate = true;
-            QMessageBox::information(this, "Duplicate File",
-                                     "This PDF file is already in your list.");
-            break;
-        }
-    }
-
-    if (!isDuplicate) {
-        auto pdfButton = new QPushButton(fileName);
-        pdfButton->setSizePolicy(QSizePolicy::Expanding,
-                                 QSizePolicy::Expanding);
-
-        connect(pdfButton, &QPushButton::clicked, this,
-                [this, filePath, &category]() { openPDF(category, filePath); });
-
-        PDFInfo newPDF;
-        newPDF.file_name = fileName.toStdString();
-        newPDF.file_path = filePath.toStdString();
-        newPDF.button = pdfButton;
-
-        category.PDFFiles.push_back(newPDF);
-
-        int addButtonIndex = category.layout->indexOf(
-            category.layout->itemAt(category.layout->count() - 2)->widget());
-        category.layout->insertWidget(addButtonIndex, pdfButton);
-    }
-}
-
-void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
-{
-    QFileInfo fileInfo(filePath);
-    QString fileName = fileInfo.fileName();
-
-    QProcess* process = new QProcess(this);
-
-    processToPDF[process] = fileName;
-
-    process->setProperty("autoDelete", true);
-   
-    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-            [this, button = cat.addButton](int exitCode, QProcess::ExitStatus exitStatus) 
-            {
-                for (auto& myCat : PDFcats) {
-                    if (myCat.addButton == button) {
-                        this->handleFinished(exitCode, exitStatus, myCat);
-                        break;
-                    }
-                }       
-            });
-
-    connect(process, &QObject::destroyed, this,
-            [this, process]() {
-                qDebug() << "Process Destroyed"; 
-            });
-
-    connect(process, &QProcess::started, this,
-            [this]() { 
-                qDebug() << "Process started successfully"; 
-            });
-
-    connect(process, &QProcess::errorOccurred, this,
-            [this, process](QProcess::ProcessError error) 
-            {
-                if (error == QProcess::FailedToStart) 
-                {
-                    QMessageBox::critical(this, "Error",
-                                          "Failed to start Process");
-                    processToPDF.remove(process);
-                    process->deleteLater();
-                }
-            });
-
-    QStringList arguments;
-        
-    // If we have a stored page number, open to that page
-    for (const auto& pdf : cat.PDFFiles) 
-    {
-        if (QString::fromStdString(pdf.file_name) == fileName && pdf.page_num > 0) {
-            arguments << QString("-new-window");
-            arguments << QString("-view");
-            arguments << QString("single page");
-            arguments << QString("-page");
-            arguments << QString::number(pdf.page_num);
-            break;
-        }
-    }
-    arguments << filePath;
-        
-    process->start("C:\\Users\\zezo_\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe", arguments);
-}
-
-void PDFManager::filterToolBoxItems() 
-{
-    QString searchText = searchBar->text();
-    
-    if (searchText.isEmpty()) 
-    {
-        for (auto &cat : PDFcats) {
-            for (auto &pdf : cat.PDFFiles) {
-                pdf.button->setVisible(true); 
-            }
-        }
-        for (int i = 0; i < toolbox->count(); ++i) {
-            toolbox->setItemEnabled(i, true);
-        }
-        return;   // Exit the function early
-    }
-    int idx = 0;
-    for (auto &cat : PDFcats) 
-    {
-        bool childMatch = false;
-        for (auto &pdf : cat.PDFFiles) {
-            if (searchText.isEmpty()) {
-                pdf.button->setVisible(true);
-            } else {
-                bool match = QString::fromStdString(pdf.file_name)
-                                    .contains(searchText, Qt::CaseInsensitive);
-                pdf.button->setVisible(match);
-                if (match)
-                    childMatch = true;
-            }
-        }
-        toolbox->setItemEnabled(idx, childMatch);
-        idx++;
-    }
-}
-
-void PDFManager::collapseAllToolBoxItems() 
-{
-    toolbox->setCurrentIndex(dummyIndex);
-    toolbox->setItemText(dummyIndex, "");
-}
-
-void PDFManager::setupToolBoxConnections() 
-{
-    disconnect(toolbox, &QToolBox::currentChanged, this,
-               &PDFManager::onToolBoxItemChanged);
-
-    connect(toolbox, &QToolBox::currentChanged, this,
-            &PDFManager::onToolBoxItemChanged);
-
-    for (QWidget *w : toolbox->findChildren<QWidget *>()) {
-        if (w->inherits("QToolBoxButton")) {
-            QAbstractButton *button = qobject_cast<QAbstractButton *>(w);
-            disconnect(button, &QAbstractButton::clicked, this,
-                       &PDFManager::onToolBoxItemClicked);
-        }
-    }
-
-    for (QWidget *w : toolbox->findChildren<QWidget *>()) {
-        if (w->inherits("QToolBoxButton")) {
-            QAbstractButton *button = qobject_cast<QAbstractButton *>(w);
-            connect(button, &QAbstractButton::clicked, this,
-                    &PDFManager::onToolBoxItemClicked);
-        }
-    }
-}
-
-void PDFManager::onToolBoxItemClicked(bool checked) 
-{
-    qDebug() << "Item clicked\n";
-
-    if (toolbox->currentIndex() == dummyIndex)
-    {
-        onAddCategoryClicked();
-    }
-
-    if (toolBoxChanged) 
-    {
-        toolBoxChanged = false;
-        return;
-    }
-
-    collapseAllToolBoxItems();
-}
-
-void PDFManager::onToolBoxItemChanged(int index) 
-{
-    qDebug() << "ToolBoxItem changed !, index : " << index
-             << "\n ";
-
-    toolBoxChanged = true;
-    lastIndex = index;
-}
-
-void PDFManager::onAddCategoryClicked()
-{
-    bool ok;
-    QString categoryName 
-            = QInputDialog::getText( this, "Add New Category",
-                "Enter category name:", QLineEdit::Normal, "", &ok);
-
-    if (ok && !categoryName.isEmpty()) 
-    {
-        QWidget *dummyWidget = toolbox->widget(dummyIndex);
-        toolbox->removeItem(dummyIndex);
-
-        PDFCat newCat(categoryName.toStdString());
-        PDFcats.push_back(newCat);
-
-        auto &cat = PDFcats.back();
-
-        PDFManager::setupNewCat(cat);
-
-        toolbox->addItem(cat.container, QString::fromStdString(cat.category));
-
-        dummyIndex = toolbox->addItem(dummyWidget, "");
-        toolbox->setItemText(dummyIndex, "");
-
-        setupToolBoxConnections();
-
-        toolbox->setCurrentIndex(dummyIndex - 1);
-    }
-}
-
-void PDFManager::setupNewCat(PDFCat& cat)
-{
-    cat.container = new QWidget(this);
-    cat.container->setStyleSheet("QWidget {"
-                                 "    background-color: #1e1e1e;"
-                                 "}");
-
-    cat.layout = new QVBoxLayout(cat.container);
-    cat.layout->setSpacing(5);
-    cat.layout->setContentsMargins(30, 10, 30, 10);
-
-    // Add and center an add button to add new pdfs
-    cat.addButton = new QPushButton("+");
-    cat.addButton->setFixedSize(30, 30);
-
-    auto centerLayout = new QHBoxLayout();
-    centerLayout->addStretch();
-    centerLayout->addWidget(cat.addButton);
-    centerLayout->addStretch();
-
-    cat.layout->addLayout(centerLayout);
-    cat.layout->addStretch(1);
-
-    connect(cat.addButton, &QPushButton::clicked, this,
-            // I may sort categories or do other stuff like edit the name 
-            // so I have to look up the category using the button
-            [this, button = cat.addButton]() 
-            {
-                for (auto& myCat : PDFcats) {
-                    if (myCat.addButton == button) {
-                        this->addNewPDF(myCat);
-                        break;
-                    }
-                }
-            });
 }
 
 void PDFManager::createMenuBar() 
@@ -581,122 +214,481 @@ void PDFManager::menuBarActionStub()
     qDebug() << "Action taken";
 }
 
-bool PDFManager::serializeData() 
+void PDFManager::createSearchbar()
 {
-    QString currentDirConfigPath = QDir::currentPath() + "\\" + "pdfmanager.conf";
+    searchBar = new QLineEdit(this);
+    searchBar->setPlaceholderText("Search...");
+    searchBar->setFont(*defaultFont);
 
-    std::ofstream file(currentDirConfigPath.toStdString());
+    connect(searchBar, &QLineEdit::textChanged, 
+            this, &PDFManager::filterToolBoxItems);
+}
 
-    if (!file.is_open()) 
+void PDFManager::createCategoriesArea() 
+{
+    categoriesArea = new QScrollArea(this);
+    categoriesArea->setFrameShape(QFrame::NoFrame);
+    categoriesArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    categoriesArea->setWidgetResizable(true);
+    categoriesArea->setMinimumWidth(250);
+    categoriesArea->setStyleSheet(
+        "QScrollArea {"
+        "    background-color: #1e1e1e;"   
+        "    border: none;"                
+        "}"
+    );
+
+    toolbox = new QToolBox(this);
+    toolbox->setStyleSheet(
+        "QToolBox {"
+        "    background-color: #1e1e1e;"  
+        "}"
+        "QToolBox::tab {"
+        "    background-color: #282a36;"   
+        "    color: white;"                
+        "    border-radius: 4px;"          
+        "}"
+        "QToolBox::tab:selected {"         
+        "    background-color: #44475a;"   
+        "}"
+        "QToolBox::tab:hover {"            
+        "    background-color: #6272a4;"  
+        
+        "}"
+        "QToolBox::tab:disabled {"         // Style for disabled tabs
+        "    background-color: #1a1a1a;"   
+        "    color: #6d6d6d;"              
+        "}"
+    );
+
+    // make toolbox scrollable
+    categoriesArea->setWidget(toolbox);
+}
+
+void PDFManager::onAddCategoryClicked()
+{
+    bool ok;
+    QString categoryName 
+            = QInputDialog::getText( this, "Add New Category",
+                "Enter category name:", QLineEdit::Normal, "", &ok);
+
+    if (ok && !categoryName.isEmpty()) 
     {
-        return false;
+        QWidget *dummyWidget = toolbox->widget(dummyIndex);
+        toolbox->removeItem(dummyIndex);
+
+        PDFCat newCat(categoryName.toStdString());
+        PDFcats.push_back(newCat);
+
+        auto &cat = PDFcats.back();
+
+        PDFManager::setupNewCat(cat);
+
+        toolbox->addItem(cat.container, QString::fromStdString(cat.category));
+
+        dummyIndex = toolbox->addItem(dummyWidget, "");
+        toolbox->setItemText(dummyIndex, "");
+
+        setupToolBoxConnections();
+
+        toolbox->setCurrentIndex(dummyIndex - 1);
+    }
+}
+
+void PDFManager::setupToolBoxConnections() 
+{
+    // disconnect first so we dont get multiple invocations
+    disconnect(toolbox, &QToolBox::currentChanged, this,
+               &PDFManager::onToolBoxItemChanged);
+
+    connect(toolbox, &QToolBox::currentChanged, this,
+            &PDFManager::onToolBoxItemChanged);
+
+    for (QWidget *w : toolbox->findChildren<QWidget *>()) {
+        if (w->inherits("QToolBoxButton")) {
+            QAbstractButton *button = qobject_cast<QAbstractButton *>(w);
+            disconnect(button, &QAbstractButton::clicked, this,
+                       &PDFManager::onToolBoxItemClicked);
+        }
     }
 
+    for (QWidget *w : toolbox->findChildren<QWidget *>()) {
+        if (w->inherits("QToolBoxButton")) {
+            QAbstractButton *button = qobject_cast<QAbstractButton *>(w);
+            connect(button, &QAbstractButton::clicked, this,
+                    &PDFManager::onToolBoxItemClicked);
+        }
+    }
+}
+
+void PDFManager::onToolBoxItemClicked(bool checked) 
+{
+    qDebug() << "Item clicked\n";
+
+    if (toolbox->currentIndex() == dummyIndex)
+    {
+        onAddCategoryClicked();
+    }
+
+    if (toolBoxChanged) 
+    {
+        toolBoxChanged = false;
+        return;
+    }
+
+    collapseAllToolBoxItems();
+}
+
+void PDFManager::onToolBoxItemChanged(int index) 
+{
+    qDebug() << "ToolBoxItem changed !, index : " << index
+             << "\n ";
+
+    toolBoxChanged = true;
+    lastIndex = index;
+}
+
+void PDFManager::collapseAllToolBoxItems() 
+{
+    toolbox->setCurrentIndex(dummyIndex);
+    toolbox->setItemText(dummyIndex, "");
+}
+
+void PDFManager::filterToolBoxItems() 
+{
+    QString searchText = searchBar->text();
+    
+    if (searchText.isEmpty()) 
+    {
+        for (auto &cat : PDFcats) {
+            for (auto &pdf : cat.PDFFiles) {
+                pdf.button->setVisible(true); 
+            }
+        }
+        for (int i = 0; i < toolbox->count(); ++i) {
+            toolbox->setItemEnabled(i, true);
+        }
+        return;   // Exit the function early
+    }
+
+    int idx = 0;
     for (auto &cat : PDFcats) 
     {
-        file << cat.category << ", " << cat.PDFFiles.size() << "\n";
-
-        for (const auto &pdf : cat.PDFFiles) 
+        bool childMatch = false;
+        for (auto &pdf : cat.PDFFiles) 
         {
-            file << pdf.file_name << ", " << pdf.file_path << ", " << pdf.page_num
-                << "\n";
+            bool match = QString::fromStdString(pdf.file_name)
+                                .contains(searchText, Qt::CaseInsensitive);
+            pdf.button->setVisible(match);
+            // at least one child matches for the toolbox to be enabled
+            if (match){
+                childMatch = true;
+                // expand it also if it matches
+                toolbox->setCurrentIndex(idx);
+            }
         }
-
-        file << "\n";
-    }
-    
-    return true;
-}
-
-void PDFManager::trim(const std::string& str, std::string::const_iterator& start, std::string::const_iterator& end) 
-{
-    auto non_ws_start = str.find_first_not_of(" \t\n\r\f\v");
-    auto non_ws_end = str.find_last_not_of(" \t\n\r\f\v");
-
-    if (non_ws_start == std::string::npos || non_ws_end == std::string::npos) {
-        start = str.end();
-        end = str.end();
-    } else {
-        start = str.begin() + non_ws_start;
-        end = str.begin() + non_ws_end + 1; 
+        toolbox->setItemEnabled(idx, childMatch);
+        idx++;
     }
 }
 
-std::string PDFManager::trim(const std::string& str) 
+#if 0
+QMap<int, QPair<QString, QWidget *>> removedItems;
+void PDFManager::filterToolBoxItems(QToolBox *toolbox, const QString &searchText) 
 {
-    auto start = str.find_first_not_of(" \t\n\r\f\v");
-    auto end = str.find_last_not_of(" \t\n\r\f\v");
+    // First restore any previously removed items if we're doing a new search
+    if (!removedItems.isEmpty()) {
+        QMapIterator<int, QPair<QString, QWidget *>> it(removedItems);
+        while (it.hasNext()) {
+            it.next();
+            int idx = it.key();
+            QString title = it.value().first;
+            QWidget *widget = it.value().second;
 
-    if (start == std::string::npos || end == std::string::npos) {
-        return "";
+            // Insert at original index if possible, otherwise append
+            if (idx < toolbox->count()) {
+                toolbox->insertItem(idx, widget, title);
+            } else {
+                toolbox->addItem(widget, title);
+            }
+        }
+        removedItems.clear();
     }
 
-    return str.substr(start, end - start + 1);
+    // Now remove items that don't match the search
+    if (!searchText.isEmpty()) {
+        for (int i = toolbox->count() - 1; i >= 0; --i) {
+            QString itemName = toolbox->itemText(i);
+            bool match = itemName.contains(searchText, Qt::CaseInsensitive);
+
+            if (!match) {
+                // Store item before removing
+                QWidget *widget = toolbox->widget(i);
+                removedItems.insert(i, qMakePair(itemName, widget));
+
+                // Remove item from toolbox but don't delete the widget
+                toolbox->removeItem(i);
+            }
+        }
+    }
+}
+#endif
+
+
+void PDFManager::setupNewCat(PDFCat& cat)
+{
+    cat.container = new QWidget(this);
+    cat.container->setStyleSheet("QWidget {"
+                                 "    background-color: #1e1e1e;"
+                                 "}");
+
+    cat.layout = new QVBoxLayout(cat.container);
+    cat.layout->setSpacing(5);
+    cat.layout->setContentsMargins(30, 10, 30, 10);
+
+    // Add and center an add button to add new pdfs
+    cat.addButton = new QPushButton("+");
+    cat.addButton->setFixedSize(30, 30);
+
+    auto centerLayout = new QHBoxLayout();
+    centerLayout->addStretch();
+    centerLayout->addWidget(cat.addButton);
+    centerLayout->addStretch();
+
+    cat.layout->addLayout(centerLayout);
+    cat.layout->addStretch(1);
+
+    connect(cat.addButton, &QPushButton::clicked, this,
+            // I may sort categories or do other stuff like edit the name 
+            // so I have to look up the category using the button
+            [this, button = cat.addButton]() 
+            {
+                for (auto& myCat : PDFcats) {
+                    if (myCat.addButton == button) {
+                        this->addNewPDF(myCat);
+                        break;
+                    }
+                }
+            });
 }
 
-// TODO: error detection
-bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat) 
+void PDFManager::setupNewPDF(PDFCat &category, QString &filePath) 
 {
-    std::string line;
+    QFileInfo fileInfo(filePath);
+    QString fileName = fileInfo.fileName();
 
-    if (!std::getline(in, line) || line.empty()) {
-        return false;
-    }
+    qInfo() << filePath << "," << fileName;
 
-    size_t comma_pos = line.find(", ");
-    if (comma_pos == std::string::npos) {
-        return false;
-    }
-
-    // Get the category and number of files inside it 
-    cat.category = line.substr(0, comma_pos);
-    int fileCount = std::stoi(line.substr(comma_pos + 2));
-
-    cat.PDFFiles.clear();
-
-    for (int i = 0; i < fileCount; i++) 
+    // check whether this pdf already exists or not
+    bool isDuplicate = false;
+    for (auto &pdf : category.PDFFiles) 
     {
-        if (!std::getline(in, line)) {
-            return false;
+        if (pdf.file_name == fileName.toStdString()) {
+            isDuplicate = true;
+            QMessageBox::information(this, "Duplicate File",
+                                     "This PDF file is already in your list.");
+            break;
         }
+    }
+    if (!isDuplicate) 
+    {
+        PDFInfo newPDF;
+    
+        WordWrapButton* wrapButton = new WordWrapButton(fileName, category.container);
+        wrapButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    
+        newPDF.button = wrapButton;
+        newPDF.file_name = fileName.toStdString();
+        newPDF.file_path = filePath.toStdString();
+    
+        connect(wrapButton, &QPushButton::clicked, this,
+                [this, filePath, button = category.addButton]() 
+                {
+                    for(auto &myCat : PDFcats){
+                        if(myCat.addButton == button){
+                            openPDF(myCat, filePath);
+                            break;
+                        }
+                    }
+                });
+            
+        category.PDFFiles.push_back(newPDF);
+        int addButtonIndex = category.layout->indexOf(
+            category.layout->itemAt(category.layout->count() - 2)->widget()
+        );
+        category.layout->insertWidget(addButtonIndex, wrapButton);
+    }
+}
 
-        std::istringstream iss(line);
-        PDFInfo pdf;
+void PDFManager::addNewPDF(PDFCat& category) 
+{
+    if (LastBrowsedPath.isEmpty()) 
+    {
+        LastBrowsedPath = QFileDialog::getOpenFileName(
+            this, "Open PDF File", QDir::homePath(), "PDF Files (*.pdf))");
+    } 
+    else 
+    {
+        LastBrowsedPath = QFileDialog::getOpenFileName(
+            this, "Open PDF File", LastBrowsedPath, "PDF Files (*.pdf))");
+    }    
 
-        // File name
-        std::getline(iss, pdf.file_name, ',');  // read till the comma
-        if (pdf.file_name.empty()) {
-            return false;
-        }
-        pdf.file_name = trim(pdf.file_name);
+    qInfo() << "Selected file path:" << LastBrowsedPath;
 
-        // File Path
-        std::getline(iss, pdf.file_path, ',');
-        if (pdf.file_path.empty()) {
-            return false;
-        }
-        pdf.file_path = trim(pdf.file_path);
-
-        // Last page number
-        std::string page_num_str;
-        std::getline(iss, page_num_str);
-        if (page_num_str.empty()) {
-            return false;
-        }
-        page_num_str = trim(page_num_str);
-        pdf.page_num = std::stoi(page_num_str);
-
-        cat.PDFFiles.push_back(pdf);
+    if (LastBrowsedPath.isEmpty()) {
+        qInfo() << "No file selected.";
+        return;
     }
 
-    std::getline(in, line);
+    setupNewPDF(category, LastBrowsedPath);
+}
+
+void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
+{
+    QFileInfo fileInfo(filePath);
+    QString fileName = fileInfo.fileName();
+
+    QProcess* process = new QProcess(this);
+
+    if (processToPDF.isEmpty()) {
+        firstProcess = true;
+    }else{
+        firstProcess = false;
+    }
+
+    processToPDF[process] = fileName;
+
+    process->setProperty("autoDelete", true);
+   
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+            [this, button = cat.addButton](int exitCode, QProcess::ExitStatus exitStatus) 
+            {
+                for (auto& myCat : PDFcats) {
+                    if (myCat.addButton == button) {
+                        this->handleFinished(exitCode, exitStatus, myCat);
+                        break;
+                    }
+                }       
+            });
+
+    connect(process, &QObject::destroyed, this,
+            [this, process]() {
+                qDebug() << "Process Destroyed"; 
+            });
+
+    connect(process, &QProcess::started, this,
+            [this]() { 
+                qDebug() << "Process started successfully"; 
+            });
+
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process](QProcess::ProcessError error) 
+            {
+                if (error == QProcess::FailedToStart) 
+                {
+                    QMessageBox::critical(this, "Error",
+                                          "Failed to start Process");
+                    processToPDF.remove(process);
+                    process->deleteLater();
+                }
+            });
+
+#ifdef Q_OS_WIN
+    QStringList arguments;
+        
+    // If we have a stored page number, open to that page
+    for (const auto& pdf : cat.PDFFiles) 
+    {
+        if ((QString::fromStdString(pdf.file_name) == fileName) &&
+            pdf.page_num > 0) 
+        {
+            arguments << QString("-new-window");
+            arguments << QString("-view");
+            arguments << QString("single page");
+            arguments << QString("-page");
+            arguments << QString::number(pdf.page_num);
+            break;
+        }
+    }
+    arguments << filePath;
+
+    // Kill sumatra as we depend on the first process
+    if(firstProcess) {
+        QProcess killProcess;
+        killProcess.start("taskkill", QStringList() << "/F" << "/IM" << "SumatraPDF.exe");
+        killProcess.waitForFinished();
+        QThread::msleep(500);
+    }
+        
+    process->start("C:\\Users\\zezo_\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe", arguments);
+#endif
+}
+
+void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category) 
+{
+    QProcess* process = qobject_cast<QProcess*>(sender());
+
+    if (!process) 
+        return;
+        
+    if (exitStatus == QProcess::CrashExit) 
+    {
+        QMessageBox::critical(this, "Process Failed",
+                                    "The running process crashed!");
+        return;
+    }
+        
+    if (exitCode != 0) 
+    {
+        // Sumatra reuses the same process so 
+        // just update the number when all windows are closed
+        qDebug() << "Exit code : "
+                 << exitCode << "\n";
+        return;
+    } 
     
-    return true;
+    for (auto it = processToPDF.begin(); it != processToPDF.end(); ++it) 
+    {
+        QProcess *process = it.key();      // Get the QProcess pointer (key)
+
+        QString fileName = it.value();
+        if (fileName.isEmpty()) 
+            continue;
+
+        for (auto& pdf : category.PDFFiles) 
+        {
+            if (QString::fromStdString(pdf.file_name) == fileName) 
+            {
+                PDFInfo tempPdf(pdf.file_name);
+
+        #ifdef Q_OS_WIN
+                tempPdf.parseSumatraSettings("C:\\Users\\zezo_\\AppData\\Local\\SumatraPDF\\SumatraPDF-settings.txt");
+        #endif        
+                pdf.page_num = tempPdf.page_num;
+                
+                if (pdf.button) 
+                {
+                    pdf.button->setText(QString("%1 (Page %2)")
+                        .arg(QString::fromStdString(pdf.file_name))
+                        .arg(pdf.page_num));
+                }
+                
+                qDebug() << "Updated page number for" << QString::fromStdString(pdf.file_name) 
+                            << "to page:" << pdf.page_num;
+                break;
+            }
+        }
+
+        qDebug() << "Process:" << process << "PDF Name:" << fileName;
+    }
+    processToPDF.clear();
 }
 
 void PDFManager::loadData() 
 {
+#ifdef Q_OS_WIN
     QString currentDirConfigPath = QDir::currentPath() + "\\" + configPath;
+#endif 
 
     std::ifstream in(currentDirConfigPath.toStdString());
 
@@ -724,50 +716,9 @@ void PDFManager::loadData()
     }
 }
 
-void PDFManager::addData() 
-{
-    for (auto& cat : PDFcats)
-    {
-        PDFManager::setupNewCat(cat);
-        toolbox->addItem(cat.container, cat.category.c_str());
-
-        for (auto& pdf : cat.PDFFiles)
-        {
-            pdf.button = new QPushButton(QString("%1 (Page %2)")
-                                            .arg(QString::fromStdString(pdf.file_name))
-                                            .arg(pdf.page_num));
-
-            pdf.button->setSizePolicy(QSizePolicy::Expanding,
-                                     QSizePolicy::Expanding);
-
-            connect(pdf.button, &QPushButton::clicked, this,
-                [this, filePath = pdf.file_path, button = cat.addButton]() 
-                { 
-                    for (auto& myCat : PDFcats) {
-                        if (myCat.addButton == button) {
-                            openPDF(myCat, QString::fromStdString(filePath)); 
-                            break;
-                        }
-                    }
-                });
-
-            int addButtonIndex = cat.layout->indexOf(
-                cat.layout->itemAt(cat.layout->count() - 2)->widget()
-            );
-            cat.layout->insertWidget(addButtonIndex, pdf.button);
-        }
-    }
-
-    QWidget *dummyWidget = new QWidget();
-    dummyWidget->setFixedHeight(0);
-    dummyWidget->setVisible(false);
-
-    dummyIndex = toolbox->addItem(dummyWidget, "");
-}
-
 void PDFManager::loadConfig()
 {
-    
+#ifdef Q_OS_WIN
     QString sumatraPath;
     const QString CONFIG_FILENAME = "pdfmanager_config.ini";
     QString currentDirConfigPath = QDir::currentPath() + "/" + CONFIG_FILENAME;
@@ -846,7 +797,95 @@ void PDFManager::loadConfig()
         settings.setValue("Paths/SumatraPDF", sumatraPath);
         settings.sync();
     }
+#endif
+}
+
+bool PDFManager::serializeData() 
+{
+#ifdef Q_OS_WIN
+    QString currentDirConfigPath = QDir::currentPath() + "\\" + "pdfmanager.conf";
+#endif
+    std::ofstream file(currentDirConfigPath.toStdString());
+
+    if (!file.is_open()) 
+    {
+        return false;
+    }
+
+    for (auto &cat : PDFcats) 
+    {
+        file << cat.category << ", " << cat.PDFFiles.size() << "\n";
+
+        for (const auto &pdf : cat.PDFFiles) 
+        {
+            file << pdf.file_name << ", " << pdf.file_path << ", " << pdf.page_num
+                 << "\n";
+        }
+
+        file << "\n";
+    }
     
+    return true;
+}
+
+// TODO: error detection
+bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat) 
+{
+    std::string line;
+
+    if (!std::getline(in, line) || line.empty()) {
+        return false;
+    }
+
+    size_t comma_pos = line.find(", ");
+    if (comma_pos == std::string::npos) {
+        return false;
+    }
+
+    // Get the category and number of files inside it 
+    cat.category = line.substr(0, comma_pos);
+    int fileCount = std::stoi(line.substr(comma_pos + 2));
+
+    cat.PDFFiles.clear();
+
+    for (int i = 0; i < fileCount; i++) 
+    {
+        if (!std::getline(in, line)) {
+            return false;
+        }
+
+        std::istringstream iss(line);
+        PDFInfo pdf;
+
+        // File name
+        std::getline(iss, pdf.file_name, ',');  // read till the comma
+        if (pdf.file_name.empty()) {
+            return false;
+        }
+        pdf.file_name = trim(pdf.file_name);
+
+        // File Path
+        std::getline(iss, pdf.file_path, ',');
+        if (pdf.file_path.empty()) {
+            return false;
+        }
+        pdf.file_path = trim(pdf.file_path);
+
+        // Last page number
+        std::string page_num_str;
+        std::getline(iss, page_num_str);
+        if (page_num_str.empty()) {
+            return false;
+        }
+        page_num_str = trim(page_num_str);
+        pdf.page_num = std::stoi(page_num_str);
+
+        cat.PDFFiles.push_back(pdf);
+    }
+
+    std::getline(in, line);
+    
+    return true;
 }
 
 void PDFManager::closeEvent(QCloseEvent *event) 
