@@ -26,6 +26,11 @@
 #include <QSettings>
 #include <QInputDialog>
 #include <QThread>
+#include <QStackedWidget>
+#include <QDockWidget>
+#include <QPropertyAnimation>
+#include <QStyle>
+#include <QList>
 
 #include <iostream>
 #include <fstream>
@@ -75,12 +80,25 @@ class PDFManager : public QMainWindow
     void loadConfig();
     bool serializeData();
     bool deserializePDFCat(std::istream &in, PDFCat &cat);
+
+    void toggleMainSidebar();
+    void updateMainSidebarButtons();
+    void toggleSecondaryDock(int index);
+    void closeSecondaryDock();
+
+        // Helper methods
+    QWidget *createSecondaryPanel(int index);
   protected:
     void closeEvent(QCloseEvent *event) override;
   public:
-    QFont *defaultFont;
-    std::vector<PDFCat> PDFcats;
-    QMap<QProcess *, QString> processToPDF;
+    QWidget *centralWidget = nullptr;
+    QHBoxLayout *mainLayout = nullptr;
+
+    // Main content Area
+    QWidget *contentArea;
+    QVBoxLayout *contentLayout = nullptr;
+    QScrollArea *categoriesArea = nullptr;
+    QToolBox *toolbox = nullptr;
 
     // Menu Bar
     QMenuBar *menuBar = nullptr;
@@ -89,13 +107,38 @@ class PDFManager : public QMainWindow
     QMenu *viewMenu = nullptr;
     QMenu *helpMenu = nullptr;
 
-    QWidget *centralWidget = nullptr;
-    QVBoxLayout *vbox = nullptr;
-    QScrollArea *categoriesArea = nullptr;
-    QToolBox *toolbox = nullptr;
+    // Main Sidebar
+    QWidget *mainSidebar = nullptr;
+    QVBoxLayout *mainSidebarLayout = nullptr;
+    QList<QPushButton *> mainSidebarButtons;
+    QPushButton *toggleMainButton;
+    bool isMainSidebarExpanded = true;
+    int mainExpandedWidth = 200;
+    int mainCollapsedWidth = 50;
+    QPropertyAnimation *mainSidebarAnimation;
+
+    struct ButtonData {
+        QString text;
+        QIcon icon; 
+        QString contentTitle;
+        QList<QString> subOptions;
+    };
+    QList<ButtonData> buttonDataList;
+
+    // Sidebar dock widget
+    QDockWidget *secondaryDock;
+    bool isSecondaryDockVisible = false;
+    QStackedWidget *secondaryStack;
+    int currentSecondaryIndex = -1;
+    int secondaryDockWidth = 250;
+
 
     // Search Bar
     QLineEdit *searchBar = nullptr;
+
+    QFont *defaultFont;
+    std::vector<PDFCat> PDFcats;
+    QMap<QProcess *, QString> processToPDF;
 
     QString LastBrowsedPath;
     QString configPath = "pdfmanager.conf";
@@ -106,4 +149,5 @@ class PDFManager : public QMainWindow
     int lastIndex = -1;
     bool toolBoxChanged = false;
     bool firstProcess = true;
+    bool dirty = false;
 };

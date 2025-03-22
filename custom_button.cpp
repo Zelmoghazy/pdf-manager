@@ -68,6 +68,8 @@ void WordWrapButton::adjustText()
     QStringList words = m_text.split(' ', Qt::SkipEmptyParts);
 
     QString wrappedText;
+    wrappedText.reserve(words.size() * 8);
+    
     QString currentLine;
 
     for (const QString& word : words) 

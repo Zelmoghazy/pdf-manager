@@ -13,10 +13,141 @@ PDFManager::PDFManager(QWidget *parent)
 
     PDFManager::setFont();
 
-    centralWidget = new QWidget(this);
-    setCentralWidget(centralWidget);
+    setDockOptions(QMainWindow::AnimatedDocks    | 
+                   QMainWindow::AllowNestedDocks |
+                   QMainWindow::AllowTabbedDocks);
 
-    auto main_layout = new QVBoxLayout(centralWidget);
+    QDockWidget *mainSidebarDock = new QDockWidget("Main Sidebar", this);
+    mainSidebarDock->setFeatures(QDockWidget::NoDockWidgetFeatures); 
+    mainSidebarDock->setAllowedAreas(Qt::LeftDockWidgetArea);
+    mainSidebarDock->setTitleBarWidget(new QWidget());   // Remove title bar
+
+    QIcon homeIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\home.png");
+    QIcon computerIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\computer.png");
+    QIcon filesIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\google-docs.png");
+    QIcon settingsIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\settings.png");
+    QIcon helpIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\help.png");
+
+    // Define button data with standard Qt icons and secondary optionss
+    buttonDataList = {
+        {"Home",
+         homeIcon,
+         "Home Page",
+         {"Dashboard", "Shortcuts", "Recent Items"}},
+
+        {"Computer",
+         computerIcon,
+         "Computer Settings",
+         {"System Info", "Disk Management", "Device Manager", "Network"}},
+
+        {"Files",
+         filesIcon,
+         "File Browser",
+         {"Documents", "Pictures", "Music", "Videos", "Downloads"}},
+
+        {"Settings",
+         settingsIcon,
+         "Application Settings",
+         {"Appearance", "Performance", "Notifications", "Privacy", "Updates"}},
+
+        {"Help",
+         helpIcon,
+         "Help & Support",
+         {"Documentation", "FAQ", "Contact Support", "About"}}};
+
+    mainSidebar = new QWidget();
+    mainSidebar->setMinimumWidth(mainExpandedWidth);
+    mainSidebar->setMaximumWidth(mainExpandedWidth);
+    mainSidebar->setStyleSheet("background-color: #282a36;");
+
+    mainSidebarLayout = new QVBoxLayout(mainSidebar);
+    mainSidebarLayout->setContentsMargins(5, 10, 5, 10);
+    mainSidebarLayout->setSpacing(5);
+
+    for(int i = 0; i <  buttonDataList.size(); ++i) 
+    {
+        const auto &buttonData = buttonDataList[i];
+        QPushButton *btn = new QPushButton();
+
+        QIcon icon = buttonData.icon;
+        btn->setIcon(icon);
+        btn->setText(buttonData.text);
+        btn->setIconSize(QSize(24, 24));
+        btn->setMinimumHeight(40);
+
+        connect(btn, &QPushButton::clicked,
+            [this, i]() {
+                toggleSecondaryDock(i); 
+            });
+        mainSidebarLayout->addWidget(btn);
+        mainSidebarButtons.append(btn);
+    }
+    
+    mainSidebarLayout->addStretch();
+
+    toggleMainButton = new QPushButton();
+    toggleMainButton->setIcon(style()->standardIcon(QStyle::SP_ArrowLeft));
+    mainSidebarLayout->addWidget(toggleMainButton);
+    connect(toggleMainButton, &QPushButton::clicked,
+            this, &PDFManager::toggleMainSidebar);
+
+    mainSidebarDock->setWidget(mainSidebar);
+
+    addDockWidget(Qt::LeftDockWidgetArea, mainSidebarDock);
+
+    // Create secondary dock widget
+    secondaryDock = new QDockWidget("Options", this);
+    secondaryDock->setAllowedAreas(Qt::LeftDockWidgetArea |
+                                   Qt::RightDockWidgetArea);
+    secondaryDock->setFeatures(QDockWidget::NoDockWidgetFeatures); 
+    secondaryDock->setMinimumWidth(secondaryDockWidth);
+    secondaryDock->setStyleSheet("background-color: #21222c;");
+
+    // Create container widget for the dock
+    QWidget *dockContents = new QWidget();
+    QVBoxLayout *dockLayout = new QVBoxLayout(dockContents);
+    dockLayout->setContentsMargins(10, 10, 10, 10);
+
+    // Create stacked widget for secondary dock content
+    secondaryStack = new QStackedWidget(dockContents);
+
+    // Create secondary panels for each main button
+    for (int i = 0; i < buttonDataList.size(); ++i) {
+        QWidget *panel = createSecondaryPanel(i);
+        secondaryStack->addWidget(panel);
+    }
+
+    dockLayout->addWidget(secondaryStack);
+    secondaryDock->setWidget(dockContents);
+
+    addDockWidget(Qt::LeftDockWidgetArea, secondaryDock);
+
+    // Add a tab dock relationship to ensure proper positioning
+    splitDockWidget(mainSidebarDock, secondaryDock, Qt::Horizontal);
+
+    connect(secondaryDock, &QDockWidget::visibilityChanged,
+        [this](bool visible) {
+            if (!visible) {
+                currentSecondaryIndex = -1;
+                isSecondaryDockVisible = false;
+                updateMainSidebarButtons();
+            }
+        });
+
+    // Initially hide the dock
+    secondaryDock->hide();
+    isSecondaryDockVisible = false;
+
+    contentArea = new QWidget(this);
+    setCentralWidget(contentArea);
+    contentLayout = new QVBoxLayout(contentArea);
+    contentLayout->setContentsMargins(5, 5, 5, 5);
+
+    // Setup animation for main sidebar
+    mainSidebarAnimation = new QPropertyAnimation(mainSidebar, "minimumWidth");
+    mainSidebarAnimation->setDuration(10);
+    connect(mainSidebarAnimation, &QPropertyAnimation::finished, this,
+            &PDFManager::updateMainSidebarButtons);
 
     createMenuBar();
         
@@ -26,8 +157,129 @@ PDFManager::PDFManager(QWidget *parent)
     loadData();
     initApp();
 
-    main_layout->addWidget(searchBar);
-    main_layout->addWidget(categoriesArea);
+    contentLayout->addWidget(searchBar);
+    contentLayout->addWidget(categoriesArea);
+
+    updateMainSidebarButtons();
+}
+
+void PDFManager::toggleMainSidebar() 
+{
+    mainSidebarAnimation->stop();
+
+    if (isMainSidebarExpanded) 
+    {
+        toggleMainButton->setText("");
+        toggleMainButton->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
+        mainSidebarAnimation->setStartValue(mainSidebar->width());
+        mainSidebarAnimation->setEndValue(mainCollapsedWidth);
+        mainSidebar->setMaximumWidth(mainCollapsedWidth);
+
+        if (isSecondaryDockVisible) {
+            closeSecondaryDock();
+        }
+    } 
+    else 
+    {
+        toggleMainButton->setText("");
+        toggleMainButton->setIcon(style()->standardIcon(QStyle::SP_ArrowLeft));
+        mainSidebarAnimation->setStartValue(mainSidebar->width());
+        mainSidebarAnimation->setEndValue(mainExpandedWidth);
+        mainSidebar->setMaximumWidth(mainExpandedWidth);
+    }
+
+    mainSidebarAnimation->start();
+    isMainSidebarExpanded = !isMainSidebarExpanded;
+}
+
+void PDFManager::updateMainSidebarButtons() 
+{
+    for (int i = 0; i < mainSidebarButtons.size(); ++i) 
+    {
+        QPushButton *btn = mainSidebarButtons[i];
+
+        if (isMainSidebarExpanded) 
+        {
+            btn->setText(buttonDataList[i].text);
+            btn->setStyleSheet("text-align: left; padding-left: 10px;");
+        } 
+        else 
+        {
+            btn->setText("");
+            btn->setStyleSheet("text-align: center; padding-left: 0px;");
+        }
+
+        if (i == currentSecondaryIndex && isSecondaryDockVisible) 
+        {
+            btn->setStyleSheet(btn->styleSheet() +
+                               "; background-color: #d0d0d0;");
+        }
+    }
+}
+
+void PDFManager::toggleSecondaryDock(int index) 
+{
+    if (currentSecondaryIndex == index && isSecondaryDockVisible) {
+        closeSecondaryDock();
+        return;
+    }
+
+    secondaryStack->setCurrentIndex(index);
+
+    secondaryDock->setWindowTitle(buttonDataList[index].text + " Options");
+
+    if (!isSecondaryDockVisible) 
+    {
+        secondaryDock->show();
+        isSecondaryDockVisible = true;
+    }
+
+    int oldIndex = currentSecondaryIndex;
+    currentSecondaryIndex = index;
+
+    updateMainSidebarButtons();
+}
+
+void PDFManager::closeSecondaryDock() 
+{
+    if (!isSecondaryDockVisible)
+        return;
+
+    secondaryDock->hide();
+
+    isSecondaryDockVisible = false;
+    currentSecondaryIndex = -1;
+
+    updateMainSidebarButtons();
+}
+
+QWidget *PDFManager::createSecondaryPanel(int index) 
+{
+    const auto &buttonData = buttonDataList[index];
+
+    QWidget *panel = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(panel);
+
+    // Add a header
+    QLabel *headerLabel = new QLabel(buttonData.text + " Options");
+    QFont headerFont = headerLabel->font();
+    headerFont.setPointSize(headerFont.pointSize() + 2);
+    headerFont.setBold(true);
+    headerLabel->setFont(headerFont);
+    layout->addWidget(headerLabel);
+
+    // Add the sub-options as buttons
+    for (const auto &subOption : buttonData.subOptions) 
+    {
+        QPushButton *btn = new QPushButton(subOption);
+        btn->setStyleSheet("text-align: left; padding: 8px;");
+
+        layout->addWidget(btn);
+    }
+
+    layout->addStretch();
+
+    return panel;
 }
 
 void PDFManager::initApp() 
@@ -101,68 +353,79 @@ void PDFManager::createMenuBar()
 {
     menuBar = QMainWindow::menuBar();
 
+    // File menu
     fileMenu = menuBar->addMenu("&File");
 
-    QAction *newAction =
-        fileMenu->addAction(QIcon::fromTheme("document-new"), "&New");
+    QAction *newAction = fileMenu->addAction(QIcon::fromTheme("document-new"), "&New");
     newAction->setShortcut(QKeySequence::New);
-    connect(newAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(newAction, &QAction::triggered,
+            this, &PDFManager::menuBarActionStub);
 
-    QAction *openAction =
-        fileMenu->addAction(QIcon::fromTheme("document-open"), "&Open...");
+    QAction *openAction = fileMenu->addAction(QIcon::fromTheme("document-open"), "&Open...");
     openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(openAction, &QAction::triggered, 
+            this, &PDFManager::menuBarActionStub);
 
-    QAction *saveAction =
-        fileMenu->addAction(QIcon::fromTheme("document-save"), "&Save");
+    QAction *saveAction = fileMenu->addAction(QIcon::fromTheme("document-save"), "&Save");
     saveAction->setShortcut(QKeySequence::Save);
-    connect(saveAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(saveAction, &QAction::triggered, this, 
+        [this]()
+        {
+            dirty = false;
+            if (!serializeData()) 
+            {
+                QMessageBox::critical(this, "Error",
+                                      "Failed to save data.",
+                                      QMessageBox::Ok);
+            }
+        });
 
     exitAction = fileMenu->addAction(QIcon::fromTheme("application-exit"), "E&xit");
     exitAction->setShortcut(QKeySequence::Quit);
-    connect(exitAction, &QAction::triggered, qApp, &QApplication::quit);
+    connect(exitAction, &QAction::triggered, 
+            qApp, &QApplication::quit);
 
     fileMenu->addSeparator();
 
-        // Edit menu
+    // Edit menu
     editMenu = menuBar->addMenu("&Edit");
 
-    QAction *undoAction =
-        editMenu->addAction(QIcon::fromTheme("edit-undo"), "&Undo");
+    QAction *undoAction = editMenu->addAction(QIcon::fromTheme("edit-undo"), "&Undo");
     undoAction->setShortcut(QKeySequence::Undo);
-    connect(undoAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(undoAction, &QAction::triggered, 
+            this, &PDFManager::menuBarActionStub);
 
-    QAction *redoAction =
-        editMenu->addAction(QIcon::fromTheme("edit-redo"), "&Redo");
+    QAction *redoAction = editMenu->addAction(QIcon::fromTheme("edit-redo"), "&Redo");
     redoAction->setShortcut(QKeySequence::Redo);
-    connect(redoAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(redoAction, &QAction::triggered,
+            this, &PDFManager::menuBarActionStub);
 
     editMenu->addSeparator();
 
-    QAction *cutAction =
-        editMenu->addAction(QIcon::fromTheme("edit-cut"), "Cu&t");
+    QAction *cutAction = editMenu->addAction(QIcon::fromTheme("edit-cut"), "Cu&t");
     cutAction->setShortcut(QKeySequence::Cut);
-    connect(cutAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(cutAction, &QAction::triggered, 
+            this, &PDFManager::menuBarActionStub);
 
-    QAction *copyAction =
-        editMenu->addAction(QIcon::fromTheme("edit-copy"), "&Copy");
+    QAction *copyAction = editMenu->addAction(QIcon::fromTheme("edit-copy"), "&Copy");
     copyAction->setShortcut(QKeySequence::Copy);
-    connect(copyAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(copyAction, &QAction::triggered, 
+            this, &PDFManager::menuBarActionStub);
 
-    QAction *pasteAction =
-        editMenu->addAction(QIcon::fromTheme("edit-paste"), "&Paste");
+    QAction *pasteAction = editMenu->addAction(QIcon::fromTheme("edit-paste"), "&Paste");
     pasteAction->setShortcut(QKeySequence::Paste);
-    connect(pasteAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    connect(pasteAction, &QAction::triggered, 
+            this, &PDFManager::menuBarActionStub);
 
     // View menu
     viewMenu = menuBar->addMenu("&View");
 
-        // Help menu
+    // Help menu
     helpMenu = menuBar->addMenu("&Help");
 
-    QAction *aboutAction =
-        helpMenu->addAction(QIcon::fromTheme("help-about"), "&About");
-    connect(aboutAction, &QAction::triggered, this, &PDFManager::menuBarActionStub);
+    QAction *aboutAction = helpMenu->addAction(QIcon::fromTheme("help-about"), "&About");
+    connect(aboutAction, &QAction::triggered, 
+            this, &PDFManager::menuBarActionStub);
 
     QFont menuFont("Open Sans", 18);
     menuBar->setFont(*defaultFont);
@@ -170,6 +433,7 @@ void PDFManager::createMenuBar()
     foreach (QWidget *widget, menuBar->findChildren<QWidget *>()) {
         widget->setFont(*defaultFont);
     }
+
     menuBar->setStyleSheet(
         "QMenuBar {"
         "    background-color: #2E3440;"   // Dark background
@@ -292,6 +556,8 @@ void PDFManager::onAddCategoryClicked()
         setupToolBoxConnections();
 
         toolbox->setCurrentIndex(dummyIndex - 1);
+
+        dirty = true;
     }
 }
 
@@ -434,7 +700,6 @@ void PDFManager::filterToolBoxItems(QToolBox *toolbox, const QString &searchText
 }
 #endif
 
-
 void PDFManager::setupNewCat(PDFCat& cat)
 {
     cat.container = new QWidget(this);
@@ -517,6 +782,8 @@ void PDFManager::setupNewPDF(PDFCat &category, QString &filePath)
             category.layout->itemAt(category.layout->count() - 2)->widget()
         );
         category.layout->insertWidget(addButtonIndex, wrapButton);
+
+        dirty = true;
     }
 }
 
@@ -675,6 +942,8 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
                 
                 qDebug() << "Updated page number for" << QString::fromStdString(pdf.file_name) 
                             << "to page:" << pdf.page_num;
+                dirty = true;
+
                 break;
             }
         }
@@ -890,28 +1159,31 @@ bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat)
 
 void PDFManager::closeEvent(QCloseEvent *event) 
 {
-    QMessageBox::StandardButton reply = QMessageBox::question(
-        this, "Save Changes", "Do you want to save changes before exiting?",
-        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    if(dirty)
+    {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this, "Save Changes", "Do you want to save changes before exiting?",
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
 
-    if (reply == QMessageBox::Yes) {
-        if (serializeData()) {
-            event->accept();
-        } else {
-            QMessageBox::critical(this, "Error",
-                                  "Failed to save data. Close anyway?",
-                                  QMessageBox::Yes | QMessageBox::No);
-
-            if (QMessageBox::Yes) {
+        if (reply == QMessageBox::Yes) {
+            if (serializeData()) {
                 event->accept();
             } else {
-                event->ignore();
+                QMessageBox::critical(this, "Error",
+                                      "Failed to save data. Close anyway?",
+                                      QMessageBox::Yes | QMessageBox::No);
+
+                if (QMessageBox::Yes) {
+                    event->accept();
+                } else {
+                    event->ignore();
+                }
             }
+        } else if (reply == QMessageBox::No) {
+            event->accept();
+        } else {
+            event->ignore();
         }
-    } else if (reply == QMessageBox::No) {
-        event->accept();
-    } else {
-        event->ignore();
     }
 }
 
