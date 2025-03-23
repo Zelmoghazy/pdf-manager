@@ -1,4 +1,4 @@
-#include "main.h"
+#include "pdfmanager.hpp"
 #include "utils.hpp"
 
 PDFManager::PDFManager(QWidget *parent)
@@ -1097,7 +1097,73 @@ bool PDFManager::serializeData()
     return true;
 }
 
-// TODO: error detection
+bool PDFManager::verifyFilePath(PDFInfo &pdf) 
+{
+    QFileInfo fileInfo(QString::fromStdString(pdf.file_path));
+
+    if (!fileInfo.exists()) 
+    {
+        QMessageBox msgBox;
+        msgBox.setIcon(QMessageBox::Warning);
+        msgBox.setText("File not found: " + QString::fromStdString(pdf.file_name));
+        msgBox.setInformativeText("The file at path: " + QString::fromStdString(pdf.file_path) + " could not be found. Would you like to locate it?");
+        msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+        msgBox.setDefaultButton(QMessageBox::Yes);
+        
+        int ret = msgBox.exec();
+        
+        if (ret == QMessageBox::Yes) 
+        {
+            QString startDir = QDir::homePath();
+            // Try to use the directory from the original path as starting point
+            QFileInfo origPathInfo(QString::fromStdString(pdf.file_path));
+            if (origPathInfo.dir().exists()) {
+                startDir = origPathInfo.dir().path();
+            }
+            
+            QString newPath = QFileDialog::getOpenFileName(
+                nullptr,                                             // parent
+                "Locate " + QString::fromStdString(pdf.file_name),   // caption
+                startDir,                                            // directory
+                "PDF Files (*.pdf);;All Files (*.*)"                 // filter
+            );
+            
+            if (!newPath.isEmpty()) 
+            {
+                pdf.file_path = newPath.toStdString();
+                return true;
+            } 
+            else 
+            {
+                // User canceled the dialog
+                QMessageBox skipMsg;
+                skipMsg.setIcon(QMessageBox::Question);
+                skipMsg.setText("No file selected");
+                skipMsg.setInformativeText("Do you want to skip this file?");
+                skipMsg.setStandardButtons(QMessageBox::Yes);
+                skipMsg.setDefaultButton(QMessageBox::Yes);
+                
+                return false;
+            }
+        }
+        else 
+        {
+            QMessageBox skipMsg;
+            skipMsg.setIcon(QMessageBox::Question);
+            skipMsg.setText("File not located");
+            skipMsg.setInformativeText("Do you want to skip this file?");
+            skipMsg.setStandardButtons(QMessageBox::Yes);
+            skipMsg.setDefaultButton(QMessageBox::Yes);
+            
+            return false;
+        }
+    }
+    return true;
+}
+
+// TODO: error detection this shits its pants if the filename has a comma 
+// I dont really know how to fix it without changing the format
+// maybe add quotes ?? 
 bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat) 
 {
     std::string line;
@@ -1139,6 +1205,11 @@ bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat)
             return false;
         }
         pdf.file_path = trim(pdf.file_path);
+
+        if(!verifyFilePath(pdf)) 
+        {
+            continue;
+        }
 
         // Last page number
         std::string page_num_str;
@@ -1187,12 +1258,3 @@ void PDFManager::closeEvent(QCloseEvent *event)
     }
 }
 
-int main(int argc, char *argv[]) 
-{
-    QApplication app(argc, argv);
-
-    PDFManager manager;
-    manager.show();
-
-    return app.exec();
-}

@@ -15,9 +15,15 @@ find_package(Qt6 COMPONENTS Core Widgets Gui REQUIRED)
 
 add_executable(StaticQtApp 
     main.cpp 
-    main.h
     pdfinfo.cpp
-    pdfinfo.h)
+    pdfinfo.h
+    utils.cpp
+    utils.hpp
+    custom_button.cpp
+    custom_button.hpp
+    pdfmanager.cpp
+    pdfmanager.hpp
+)
 
 target_link_libraries(StaticQtApp PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui)
 

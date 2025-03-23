@@ -80,6 +80,7 @@ class PDFManager : public QMainWindow
     void loadConfig();
     bool serializeData();
     bool deserializePDFCat(std::istream &in, PDFCat &cat);
+    bool verifyFilePath(PDFInfo &pdf);
 
     void toggleMainSidebar();
     void updateMainSidebarButtons();

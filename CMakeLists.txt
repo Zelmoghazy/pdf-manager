@@ -7,19 +7,19 @@ project(windowlayout LANGUAGES CXX)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD 17)
 
+include_directories(${CMAKE_SOURCE_DIR}/inc)
+
+file(GLOB SRC_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp")
+file(GLOB INC_FILES "${CMAKE_SOURCE_DIR}/inc/*.h" "${CMAKE_SOURCE_DIR}/inc/*.hpp")
+
+
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 qt_standard_project_setup()
 
 qt_add_executable(windowlayout
-    main.cpp 
-    main.h
-    pdfinfo.cpp
-    pdfinfo.h
-    utils.cpp
-    utils.hpp
-    custom_button.cpp
-    custom_button.hpp
+    ${SRC_FILES}
+    ${INC_FILES}
 )
 
 set_target_properties(windowlayout PROPERTIES
