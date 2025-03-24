@@ -17,10 +17,39 @@ PDFManager::PDFManager(QWidget *parent)
                    QMainWindow::AllowNestedDocks |
                    QMainWindow::AllowTabbedDocks);
 
+    createMenuBar();
+    createSidebar();
+
+
+    contentArea = new QWidget(this);
+    setCentralWidget(contentArea);
+    contentLayout = new QVBoxLayout(contentArea);
+    contentLayout->setContentsMargins(5, 5, 5, 5);
+
+        
+    createSearchbar();
+    createCategoriesArea();
+
+    loadData();
+    initApp();
+
+    QPushButton* switchViewBtn = new QPushButton("Switch View");
+    connect(switchViewBtn, &QPushButton::clicked, 
+        this, &PDFManager::switchPDFView);
+
+    contentLayout->addWidget(searchBar);
+    contentLayout->addWidget(switchViewBtn);
+    contentLayout->addWidget(categoriesArea);
+
+    updateMainSidebarButtons();
+}
+
+void PDFManager::createSidebar() 
+{
     QDockWidget *mainSidebarDock = new QDockWidget("Main Sidebar", this);
     mainSidebarDock->setFeatures(QDockWidget::NoDockWidgetFeatures); 
     mainSidebarDock->setAllowedAreas(Qt::LeftDockWidgetArea);
-    mainSidebarDock->setTitleBarWidget(new QWidget());   // Remove title bar
+    mainSidebarDock->setTitleBarWidget(new QWidget());
 
     QIcon homeIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\home.png");
     QIcon computerIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\computer.png");
@@ -56,8 +85,8 @@ PDFManager::PDFManager(QWidget *parent)
          {"Documentation", "FAQ", "Contact Support", "About"}}};
 
     mainSidebar = new QWidget();
-    mainSidebar->setMinimumWidth(mainExpandedWidth);
-    mainSidebar->setMaximumWidth(mainExpandedWidth);
+    mainSidebar->setMinimumWidth(mainCollapsedWidth);
+    mainSidebar->setMaximumWidth(mainCollapsedWidth);
     mainSidebar->setStyleSheet("background-color: #282a36;");
 
     mainSidebarLayout = new QVBoxLayout(mainSidebar);
@@ -86,7 +115,7 @@ PDFManager::PDFManager(QWidget *parent)
     mainSidebarLayout->addStretch();
 
     toggleMainButton = new QPushButton();
-    toggleMainButton->setIcon(style()->standardIcon(QStyle::SP_ArrowLeft));
+    toggleMainButton->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
     mainSidebarLayout->addWidget(toggleMainButton);
     connect(toggleMainButton, &QPushButton::clicked,
             this, &PDFManager::toggleMainSidebar);
@@ -112,7 +141,8 @@ PDFManager::PDFManager(QWidget *parent)
     secondaryStack = new QStackedWidget(dockContents);
 
     // Create secondary panels for each main button
-    for (int i = 0; i < buttonDataList.size(); ++i) {
+    for (int i = 0; i < buttonDataList.size(); ++i) 
+    {
         QWidget *panel = createSecondaryPanel(i);
         secondaryStack->addWidget(panel);
     }
@@ -138,29 +168,11 @@ PDFManager::PDFManager(QWidget *parent)
     secondaryDock->hide();
     isSecondaryDockVisible = false;
 
-    contentArea = new QWidget(this);
-    setCentralWidget(contentArea);
-    contentLayout = new QVBoxLayout(contentArea);
-    contentLayout->setContentsMargins(5, 5, 5, 5);
-
     // Setup animation for main sidebar
     mainSidebarAnimation = new QPropertyAnimation(mainSidebar, "minimumWidth");
     mainSidebarAnimation->setDuration(10);
     connect(mainSidebarAnimation, &QPropertyAnimation::finished, this,
             &PDFManager::updateMainSidebarButtons);
-
-    createMenuBar();
-        
-    createSearchbar();
-    createCategoriesArea();
-
-    loadData();
-    initApp();
-
-    contentLayout->addWidget(searchBar);
-    contentLayout->addWidget(categoriesArea);
-
-    updateMainSidebarButtons();
 }
 
 void PDFManager::toggleMainSidebar() 
@@ -282,6 +294,79 @@ QWidget *PDFManager::createSecondaryPanel(int index)
     return panel;
 }
 
+void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
+{
+    pdf.button = new WordWrapButton(QString("%1\n(Page %2)")
+                                .arg(QString::fromStdString(pdf.file_name))
+                                .arg(pdf.page_num), nullptr);
+
+    pdf.button->setSizePolicy(QSizePolicy::Expanding,
+                              QSizePolicy::Expanding);
+
+    connect(pdf.button, &WordWrapButton::clicked, this,
+        [this, filePath = pdf.file_path, button = cat.addButton]() 
+        { 
+            for (auto& myCat : PDFcats) {
+                if (myCat.addButton == button) {
+                    openPDF(myCat, QString::fromStdString(filePath)); 
+                    break;
+                }
+            }
+        });
+
+    int addButtonIndex = cat.layout->indexOf(
+        cat.layout->itemAt(cat.layout->count() - 2)->widget()
+    );
+    cat.layout->insertWidget(addButtonIndex, pdf.button);
+            
+    WordWrapButton* flowButton = new WordWrapButton("", nullptr);
+
+    int squareSize = 100; 
+    flowButton->setMinimumSize(squareSize, squareSize);
+    flowButton->setMaximumSize(squareSize, squareSize);
+    flowButton->setFixedSize(squareSize, squareSize);
+    flowButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+    QString filePath = QString::fromStdString(pdf.file_path);
+    QFileInfo fileInfo(filePath);
+
+    std::unique_ptr<Poppler::Document> document(Poppler::Document::load(filePath));
+    if (document && !document->isLocked()) 
+    {
+        std::unique_ptr<Poppler::Page> pdfPage(document->page(0));
+    
+        if (pdfPage) {
+            QImage image = pdfPage->renderToImage(72.0, 72.0); // 72 DPI
+        
+            QPixmap pixmap = QPixmap::fromImage(image).scaled(
+                squareSize, squareSize, 
+                Qt::KeepAspectRatio, 
+                Qt::SmoothTransformation
+            );
+        
+            flowButton->setIcon(QIcon(pixmap));
+            flowButton->setIconSize(QSize(squareSize, squareSize));
+        
+            flowButton->setToolTip(QString("%1 (Page %2)")
+                                .arg(QString::fromStdString(pdf.file_name))
+                                .arg(pdf.page_num));
+        }
+    }
+
+    connect(flowButton, &WordWrapButton::clicked, this,
+        [this, filePath = pdf.file_path, button = cat.addButton]() 
+        { 
+            for (auto& myCat : PDFcats) {
+                if (myCat.addButton == button) {
+                    openPDF(myCat, QString::fromStdString(filePath)); 
+                    break;
+                }
+            }
+        });
+
+    cat.flowLayout->addWidget(flowButton);
+}
+
 void PDFManager::initApp() 
 {
     for (auto& cat : PDFcats)
@@ -291,28 +376,7 @@ void PDFManager::initApp()
 
         for (auto& pdf : cat.PDFFiles)
         {
-            pdf.button = new WordWrapButton(QString("%1 (Page %2)")
-                                            .arg(QString::fromStdString(pdf.file_name))
-                                            .arg(pdf.page_num), cat.container);
-
-            pdf.button->setSizePolicy(QSizePolicy::Expanding,
-                                     QSizePolicy::Expanding);
-
-            connect(pdf.button, &WordWrapButton::clicked, this,
-                [this, filePath = pdf.file_path, button = cat.addButton]() 
-                { 
-                    for (auto& myCat : PDFcats) {
-                        if (myCat.addButton == button) {
-                            openPDF(myCat, QString::fromStdString(filePath)); 
-                            break;
-                        }
-                    }
-                });
-
-            int addButtonIndex = cat.layout->indexOf(
-                cat.layout->itemAt(cat.layout->count() - 2)->widget()
-            );
-            cat.layout->insertWidget(addButtonIndex, pdf.button);
+            setupPDFButton(pdf, cat);
         }
     }
 
@@ -700,6 +764,31 @@ void PDFManager::filterToolBoxItems(QToolBox *toolbox, const QString &searchText
 }
 #endif
 
+void PDFManager::switchPDFView() 
+{
+    for (auto& cat : PDFcats) {
+        int nextIndex = (cat.stackedWidget->currentIndex() + 1) % cat.stackedWidget->count();
+        cat.stackedWidget->setCurrentIndex(nextIndex);
+
+        QWidget* parent = cat.container->parentWidget();
+        while (parent) {
+            QScrollArea* scrollArea = qobject_cast<QScrollArea*>(parent);
+            if (scrollArea) {
+                scrollArea->verticalScrollBar()->setValue(0); 
+                break;
+            }
+
+            QScrollBar* scrollBar = parent->findChild<QScrollBar*>();
+            if (scrollBar) {
+                scrollBar->setValue(0); 
+                break;
+            }
+
+            parent = parent->parentWidget();
+        }
+    }
+}
+
 void PDFManager::setupNewCat(PDFCat& cat)
 {
     cat.container = new QWidget(this);
@@ -707,9 +796,13 @@ void PDFManager::setupNewCat(PDFCat& cat)
                                  "    background-color: #1e1e1e;"
                                  "}");
 
-    cat.layout = new QVBoxLayout(cat.container);
+    cat.layout = new QVBoxLayout();
     cat.layout->setSpacing(5);
     cat.layout->setContentsMargins(30, 10, 30, 10);
+
+    cat.flowLayout = new FlowLayout();
+    cat.flowLayout->setSpacing(5);
+    cat.flowLayout->setContentsMargins(30, 10, 30, 10);
 
     // Add and center an add button to add new pdfs
     cat.addButton = new QPushButton("+");
@@ -735,6 +828,20 @@ void PDFManager::setupNewCat(PDFCat& cat)
                     }
                 }
             });
+
+    cat.stackedWidget = new QStackedWidget(cat.container);
+    
+    QWidget* vboxContainer = new QWidget();
+    QWidget* flowContainer = new QWidget();
+    
+    vboxContainer->setLayout(cat.layout);       
+    flowContainer->setLayout(cat.flowLayout);   
+    
+    cat.stackedWidget->addWidget(vboxContainer); // Index 0
+    cat.stackedWidget->addWidget(flowContainer); // Index 1
+        
+    QVBoxLayout* containerLayout = new QVBoxLayout(cat.container);
+    containerLayout->addWidget(cat.stackedWidget);
 }
 
 void PDFManager::setupNewPDF(PDFCat &category, QString &filePath) 
@@ -758,30 +865,13 @@ void PDFManager::setupNewPDF(PDFCat &category, QString &filePath)
     if (!isDuplicate) 
     {
         PDFInfo newPDF;
-    
-        WordWrapButton* wrapButton = new WordWrapButton(fileName, category.container);
-        wrapButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    
-        newPDF.button = wrapButton;
+        
         newPDF.file_name = fileName.toStdString();
         newPDF.file_path = filePath.toStdString();
     
-        connect(wrapButton, &QPushButton::clicked, this,
-                [this, filePath, button = category.addButton]() 
-                {
-                    for(auto &myCat : PDFcats){
-                        if(myCat.addButton == button){
-                            openPDF(myCat, filePath);
-                            break;
-                        }
-                    }
-                });
+        setupPDFButton(newPDF, category);
             
         category.PDFFiles.push_back(newPDF);
-        int addButtonIndex = category.layout->indexOf(
-            category.layout->itemAt(category.layout->count() - 2)->widget()
-        );
-        category.layout->insertWidget(addButtonIndex, wrapButton);
 
         dirty = true;
     }
@@ -935,7 +1025,7 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
                 
                 if (pdf.button) 
                 {
-                    pdf.button->setText(QString("%1 (Page %2)")
+                    pdf.button->setText(QString("%1\n(Page %2)")
                         .arg(QString::fromStdString(pdf.file_name))
                         .arg(pdf.page_num));
                 }
@@ -1257,4 +1347,3 @@ void PDFManager::closeEvent(QCloseEvent *event)
         }
     }
 }
-

@@ -5,6 +5,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QString>
+#include <QStackedWidget>
 
 #include <iostream>
 #include <fstream>
@@ -16,6 +17,7 @@
 #include <algorithm>
 
 #include "custom_button.hpp"
+#include "flowlayout.h"
 #include "utils.hpp"
 
 struct PDFInfo
@@ -46,7 +48,9 @@ struct PDFCat
     std::vector<PDFInfo> PDFFiles;
 
     QWidget     *container = nullptr;
+    QStackedWidget* stackedWidget = nullptr;
     QVBoxLayout *layout = nullptr;
+    FlowLayout* flowLayout = nullptr; 
 
     // to add new categories
     QPushButton *addButton = nullptr;

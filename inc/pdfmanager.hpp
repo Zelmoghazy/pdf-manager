@@ -31,6 +31,11 @@
 #include <QPropertyAnimation>
 #include <QStyle>
 #include <QList>
+#include <QScrollBar>
+#include <flowlayout.h>
+#include <poppler-qt6.h>
+#include <QPixmap>
+#include <QImage>
 
 #include <iostream>
 #include <fstream>
@@ -71,8 +76,10 @@ class PDFManager : public QMainWindow
 
     void setupNewCat(PDFCat &cat);
     void setupNewPDF(PDFCat &category, QString &filePath); 
+    void setupPDFButton(PDFInfo &pdf, PDFCat &cat);
 
     void addNewPDF(PDFCat &category);
+    void switchPDFView();
     void openPDF(PDFCat &cat, const QString &filePath);
     void handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category);
 
@@ -81,7 +88,7 @@ class PDFManager : public QMainWindow
     bool serializeData();
     bool deserializePDFCat(std::istream &in, PDFCat &cat);
     bool verifyFilePath(PDFInfo &pdf);
-
+    void createSidebar();
     void toggleMainSidebar();
     void updateMainSidebarButtons();
     void toggleSecondaryDock(int index);
@@ -113,7 +120,7 @@ class PDFManager : public QMainWindow
     QVBoxLayout *mainSidebarLayout = nullptr;
     QList<QPushButton *> mainSidebarButtons;
     QPushButton *toggleMainButton;
-    bool isMainSidebarExpanded = true;
+    bool isMainSidebarExpanded = false;
     int mainExpandedWidth = 200;
     int mainCollapsedWidth = 50;
     QPropertyAnimation *mainSidebarAnimation;
