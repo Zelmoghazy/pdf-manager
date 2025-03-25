@@ -1,0 +1,11 @@
+    poppler
+    jpeg
+    lzma
+    zlib
+    freetype
+    bz2
+    brotlicommon
+    brotlidec
+    libpng16
+    openjp2
+    tiff

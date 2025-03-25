@@ -19,7 +19,7 @@ include_directories(
 file(GLOB SRC_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 file(GLOB INC_FILES "${CMAKE_SOURCE_DIR}/inc/*.h" "${CMAKE_SOURCE_DIR}/inc/*.hpp")
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 
 qt_standard_project_setup()
 
@@ -44,6 +44,7 @@ target_link_libraries(windowlayout PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    Qt6::Concurrent
     ${POPPLER_LIBRARY}
 )
 

@@ -47,6 +47,9 @@
 #include <algorithm>
 
 #include "pdfinfo.h"
+#include "pdfsearch.hpp"
+#include "utils.hpp"
+
 
 #ifdef QT_STATIC
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin) // Windows
@@ -143,6 +146,8 @@ class PDFManager : public QMainWindow
 
     // Search Bar
     QLineEdit *searchBar = nullptr;
+
+    PDFSearchWidget* searchWidget;
 
     QFont *defaultFont;
     std::vector<PDFCat> PDFcats;

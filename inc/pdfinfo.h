@@ -28,6 +28,9 @@ struct PDFInfo
     bool found = false;     // whether it was found while parsing
     int page_num = 0;       // last opened page
 
+    int total_page_num = 0;
+    int last_opened_time = 0;   // sort using it
+
     std::string mode;       // to be used to add options like open in full screen or presentation mode or whatever
 
     WordWrapButton *button = nullptr;

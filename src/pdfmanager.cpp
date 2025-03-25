@@ -1,5 +1,4 @@
 #include "pdfmanager.hpp"
-#include "utils.hpp"
 
 PDFManager::PDFManager(QWidget *parent)
 {
@@ -141,7 +140,21 @@ void PDFManager::createSidebar()
     secondaryStack = new QStackedWidget(dockContents);
 
     // Create secondary panels for each main button
-    for (int i = 0; i < buttonDataList.size(); ++i) 
+
+    searchWidget = new PDFSearchWidget();
+    secondaryStack->addWidget(searchWidget);
+
+    // Connect to its signals if needed
+    connect(searchWidget, &PDFSearchWidget::searchStarted, this, []()
+    {
+        qDebug() << "Search started";
+    });
+    connect(searchWidget, &PDFSearchWidget::searchFinished, this, [this]()
+    {
+        QMessageBox::information(this, "Search" , "Search done !", QMessageBox::Ok);
+    });
+
+    for (int i = 1; i < buttonDataList.size(); ++i) 
     {
         QWidget *panel = createSecondaryPanel(i);
         secondaryStack->addWidget(panel);
@@ -296,9 +309,39 @@ QWidget *PDFManager::createSecondaryPanel(int index)
 
 void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
 {
-    pdf.button = new WordWrapButton(QString("%1\n(Page %2)")
+    QImage image;
+    QPixmap pixmap;
+    int squareSize = 100; 
+
+    QString filePath = QString::fromStdString(pdf.file_path);
+    QFileInfo fileInfo(filePath);
+
+    searchWidget->addDocument(filePath);
+
+    std::unique_ptr<Poppler::Document> document(Poppler::Document::load(filePath));
+    if (document && !document->isLocked()) 
+    {
+        pdf.total_page_num = document->numPages();
+
+        std::unique_ptr<Poppler::Page> pdfPage(document->page(0));
+    
+        if (pdfPage) 
+        {
+            image = pdfPage->renderToImage(72.0, 72.0); // 72 DPI
+        
+            pixmap = QPixmap::fromImage(image).scaled(
+                squareSize, squareSize, 
+                Qt::KeepAspectRatio, 
+                Qt::SmoothTransformation
+            );
+        
+        }
+    }
+
+    pdf.button = new WordWrapButton(QString("%1 (Page %2 of %3)")
                                 .arg(QString::fromStdString(pdf.file_name))
-                                .arg(pdf.page_num), nullptr);
+                                .arg(pdf.page_num)
+                                .arg(pdf.total_page_num), nullptr);
 
     pdf.button->setSizePolicy(QSizePolicy::Expanding,
                               QSizePolicy::Expanding);
@@ -321,37 +364,19 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
             
     WordWrapButton* flowButton = new WordWrapButton("", nullptr);
 
-    int squareSize = 100; 
     flowButton->setMinimumSize(squareSize, squareSize);
     flowButton->setMaximumSize(squareSize, squareSize);
     flowButton->setFixedSize(squareSize, squareSize);
     flowButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-    QString filePath = QString::fromStdString(pdf.file_path);
-    QFileInfo fileInfo(filePath);
 
-    std::unique_ptr<Poppler::Document> document(Poppler::Document::load(filePath));
-    if (document && !document->isLocked()) 
-    {
-        std::unique_ptr<Poppler::Page> pdfPage(document->page(0));
-    
-        if (pdfPage) {
-            QImage image = pdfPage->renderToImage(72.0, 72.0); // 72 DPI
+    flowButton->setIcon(QIcon(pixmap));
+    flowButton->setIconSize(QSize(squareSize, squareSize));
         
-            QPixmap pixmap = QPixmap::fromImage(image).scaled(
-                squareSize, squareSize, 
-                Qt::KeepAspectRatio, 
-                Qt::SmoothTransformation
-            );
-        
-            flowButton->setIcon(QIcon(pixmap));
-            flowButton->setIconSize(QSize(squareSize, squareSize));
-        
-            flowButton->setToolTip(QString("%1 (Page %2)")
-                                .arg(QString::fromStdString(pdf.file_name))
-                                .arg(pdf.page_num));
-        }
-    }
+    flowButton->setToolTip(QString("%1 (Page %2 of %3)")
+                        .arg(QString::fromStdString(pdf.file_name))
+                        .arg(pdf.page_num)
+                        .arg(pdf.total_page_num));
 
     connect(flowButton, &WordWrapButton::clicked, this,
         [this, filePath = pdf.file_path, button = cat.addButton]() 
@@ -1025,9 +1050,10 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
                 
                 if (pdf.button) 
                 {
-                    pdf.button->setText(QString("%1\n(Page %2)")
+                    pdf.button->setText(QString("%1 (Page %2 of %3)")
                         .arg(QString::fromStdString(pdf.file_name))
-                        .arg(pdf.page_num));
+                        .arg(pdf.page_num)
+                        .arg(pdf.total_page_num));
                 }
                 
                 qDebug() << "Updated page number for" << QString::fromStdString(pdf.file_name) 
