@@ -129,10 +129,15 @@ void PDFManager::createSidebar()
                                    Qt::RightDockWidgetArea);
     secondaryDock->setFeatures(QDockWidget::NoDockWidgetFeatures); 
     secondaryDock->setMinimumWidth(secondaryDockWidth);
-    secondaryDock->setStyleSheet("background-color: #21222c;");
+
+    //QPalette palette = secondaryDock->palette();
+    //palette.setColor(QPalette::Window, QColor("#21222c"));
+    //secondaryDock->setPalette(palette);
+    //secondaryDock->setAutoFillBackground(true);
+    //secondaryDock->setStyleSheet("background-color: #21222c;");
 
     // Create container widget for the dock
-    QWidget *dockContents = new QWidget();
+    QWidget *dockContents = new QWidget(secondaryDock);
     QVBoxLayout *dockLayout = new QVBoxLayout(dockContents);
     dockLayout->setContentsMargins(10, 10, 10, 10);
 
@@ -141,7 +146,7 @@ void PDFManager::createSidebar()
 
     // Create secondary panels for each main button
 
-    searchWidget = new PDFSearchWidget();
+    searchWidget = new PDFSearchWidget(secondaryStack);
     secondaryStack->addWidget(searchWidget);
 
     // Connect to its signals if needed

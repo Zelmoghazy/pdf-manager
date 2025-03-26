@@ -17,7 +17,8 @@ PDFSearchWidget::~PDFSearchWidget()
     workerThread->wait();
 }
 
-void PDFSearchWidget::setDocuments(const QStringList& filepaths) {
+void PDFSearchWidget::setDocuments(const QStringList& filepaths) 
+{
     documentPaths = filepaths;
 }
 
@@ -56,12 +57,20 @@ void PDFSearchWidget::setupSearchThread()
     workerThread->start();
 }
 
-void PDFSearchWidget::startSearch() {
+void PDFSearchWidget::clearSearchResults()
+{
+    pageButtons.clear();
+    
+    resultsTable->setRowCount(0);
+}
+
+void PDFSearchWidget::startSearch() 
+{
     QString term = searchInput->text().trimmed();
     if (term.isEmpty()) 
         return;
 
-    resultsTable->setRowCount(0);
+    clearSearchResults();
     emit searchStarted();
 
     QtConcurrent::run([this, term]() {
@@ -98,10 +107,45 @@ void PDFSearchWidget::searchInDocument(const QString& filepath, const QString& t
     }
 }
 
+void PDFSearchWidget::openPDFat(const QString &filePath, int page_num) 
+{
+   QProcess* process = new QProcess();
+
+#ifdef Q_OS_WIN
+    QStringList arguments;
+    arguments << QString("-new-window");
+    arguments << QString("-view");
+    arguments << QString("single page");
+    arguments << QString("-page");
+    arguments << QString::number(page_num);
+    arguments << filePath;
+        
+    process->start("C:\\Users\\zezo_\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe", arguments);
+#endif
+}
+
+void PDFSearchWidget::createPageButton(int row, const QString& filePath, int pageNumber) 
+{
+    auto pageButton = std::make_unique<QPushButton>(QString("%1").arg(pageNumber));
+
+    // Get a raw pointer before moving
+    QPushButton* buttonPtr = pageButton.get();
+    
+    connect(pageButton.get(), &QPushButton::clicked, this, 
+            [this, filePath, pageNumber]() {
+                openPDFat(filePath, pageNumber);
+            });
+
+    resultsTable->setCellWidget(row, 1, buttonPtr);
+
+    pageButtons[buttonPtr] = std::move(pageButton);
+}
+
 void PDFSearchWidget::addSearchResult(const SearchResult& result) 
 {
     int row = resultsTable->rowCount();
     resultsTable->insertRow(row);
     resultsTable->setItem(row, 0, new QTableWidgetItem(QFileInfo(result.filepath).fileName()));
-    resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(result.pageNumber)));
+    //resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(result.pageNumber)));
+    createPageButton(row, result.filepath, result.pageNumber);
 }

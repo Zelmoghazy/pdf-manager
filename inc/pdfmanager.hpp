@@ -60,6 +60,7 @@ class PDFManager : public QMainWindow
     Q_OBJECT
   public:
     PDFManager(QWidget *parent = nullptr);
+    
   private slots:
     void initApp();
     void setFont();
