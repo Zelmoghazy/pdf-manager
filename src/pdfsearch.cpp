@@ -38,7 +38,8 @@ void PDFSearchWidget::setupUI()
     layout->addWidget(searchInput);
 
     auto searchButton = new QPushButton("Search", this);
-    connect(searchButton, &QPushButton::clicked, this, &PDFSearchWidget::startSearch);
+    connect(searchButton, &QPushButton::clicked, 
+            this, &PDFSearchWidget::startSearch);
     layout->addWidget(searchButton);
 
     resultsTable = new QTableWidget(this);
@@ -67,17 +68,21 @@ void PDFSearchWidget::clearSearchResults()
 void PDFSearchWidget::startSearch() 
 {
     QString term = searchInput->text().trimmed();
+
     if (term.isEmpty()) 
         return;
 
     clearSearchResults();
     emit searchStarted();
 
-    QtConcurrent::run([this, term]() {
+    QtConcurrent::run([this, term]() 
+    {
         for (const auto& filepath : documentPaths) {
             searchInDocument(filepath, term);
         }
-        QMetaObject::invokeMethod(this, &PDFSearchWidget::searchFinished, Qt::QueuedConnection);
+        // Invokes the function with arguments in the event loop of the main thread.
+        QMetaObject::invokeMethod(this, &PDFSearchWidget::searchFinished,
+                                  Qt::QueuedConnection);
     });
 }
 
@@ -96,11 +101,13 @@ void PDFSearchWidget::searchInDocument(const QString& filepath, const QString& t
         if (!page){
             continue;
         }
+
         QString pageText = page->text(QRect());
         if (pageText.toLower().contains(lowercaseTerm)) 
         {
             SearchResult result{filepath, pageNum + 1};
-            QMetaObject::invokeMethod(this, [this, result]() {
+            QMetaObject::invokeMethod(this, [this, result]() 
+            {
                 addSearchResult(result);
             }, Qt::QueuedConnection);
         }
@@ -119,7 +126,7 @@ void PDFSearchWidget::openPDFat(const QString &filePath, int page_num)
     arguments << QString("-page");
     arguments << QString::number(page_num);
     arguments << filePath;
-        
+    
     process->start("C:\\Users\\zezo_\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe", arguments);
 #endif
 }

@@ -48,6 +48,7 @@
 
 #include "pdfinfo.h"
 #include "pdfsearch.hpp"
+#include "custom_layout.hpp"
 #include "utils.hpp"
 
 
@@ -93,10 +94,14 @@ class PDFManager : public QMainWindow
     bool deserializePDFCat(std::istream &in, PDFCat &cat);
     bool verifyFilePath(PDFInfo &pdf);
     void createSidebar();
+    void addMainSidebarSection(const QString &text, const QIcon &icon, int idx); 
     void toggleMainSidebar();
     void updateMainSidebarButtons();
     void toggleSecondaryDock(int index);
     void closeSecondaryDock();
+    void updateTimestamps(PDFInfo &pdf, qint64 time);
+    void updateTimestamps(PDFInfo &pdf);
+    void sortCatPDFs(PDFCat& category, CompareFunc sortfunc);
 
         // Helper methods
     QWidget *createSecondaryPanel(int index);

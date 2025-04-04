@@ -11,6 +11,20 @@ void WordWrapButton::setText(const QString& text){
     m_label->setText(text);
     adjustText();
 }
+void WordWrapButton::setTimestamp(qint64 time) 
+{
+    m_timestamp = time;
+}
+
+QString WordWrapButton::getText() 
+{ 
+    return m_text; 
+}
+
+qint64 WordWrapButton::getTimestamp() 
+{
+    return m_timestamp; 
+}
     
 void WordWrapButton::resizeEvent(QResizeEvent* event) 
 {

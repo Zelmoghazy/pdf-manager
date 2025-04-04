@@ -52,6 +52,7 @@ void PDFInfo::parseSumatraSettings(const std::string &settings_path)
         
     int  bracket_level = 1;
     bool insidePdfEntry = false;
+    bool skipentry = true;
     
     while (std::getline(file, line))
     {
@@ -69,6 +70,7 @@ void PDFInfo::parseSumatraSettings(const std::string &settings_path)
             if (bracket_level == 2)  // we are inside a file state
             {
                 insidePdfEntry = true;
+                skipentry = false;
             }
             continue;
         }
@@ -86,60 +88,66 @@ void PDFInfo::parseSumatraSettings(const std::string &settings_path)
         }
     
         // start parsing entries
-        if (insidePdfEntry)
+        if (insidePdfEntry && !skipentry)
         {
             // the remaining line after trimming white space
             size_t remaining = std::distance(start, end);
-    
-            // Check filename first for a match
-            if (remaining >= FilePath_len &&  
-                (memcmp(&(*start), FilePath, FilePath_len) == 0)) 
+            
+            if(!found)
             {
-                auto equals_pos = std::find(start, end, '=');
-    
-                if (equals_pos != end)
+                // Check filename first for a match
+                if (remaining >= FilePath_len &&  
+                    (memcmp(&(*start), FilePath, FilePath_len) == 0)) 
                 {
-                    // Get the full path
-                    std::string fullPath(equals_pos + 1, end);
-    
-                    // Trim the path
-                    std::string::const_iterator path_start, path_end;
-                    trim(fullPath, path_start, path_end);
-    
-                    std::string trimmedPath(path_start, path_end);
-    
-                    size_t lastSlash1 = trimmedPath.rfind('\\');
-                    size_t lastSlash2 = trimmedPath.rfind('/' );
-                    size_t lastSlash;
-    
-                    if (lastSlash1 == std::string::npos)
+                    auto equals_pos = std::find(start, end, '=');
+        
+                    if (equals_pos != end)
                     {
-                        lastSlash = lastSlash2;
-                    } 
-                    else if (lastSlash2 == std::string::npos)
-                    {
-                        lastSlash = lastSlash1;
-                    }
-                    else 
-                    {
-                        lastSlash = std::max(lastSlash1, lastSlash2);
-                    }
-    
-                    if (lastSlash != std::string::npos)
-                    {
-                        lastSlash++;
-                        if (trimmedPath.compare(lastSlash, trimmedPath.length() - lastSlash,
-                                                file_name, 0, file_name.length()) == 0) 
+                        // Get the full path
+                        std::string fullPath(equals_pos + 1, end);
+        
+                        // Trim the path
+                        std::string::const_iterator path_start, path_end;
+                        trim(fullPath, path_start, path_end);
+        
+                        std::string trimmedPath(path_start, path_end);
+        
+                        size_t lastSlash1 = trimmedPath.rfind('\\');
+                        size_t lastSlash2 = trimmedPath.rfind('/' );
+                        size_t lastSlash;
+        
+                        if (lastSlash1 == std::string::npos)
                         {
-                            // found a match
-                            found = true;
+                            lastSlash = lastSlash2;
                         } 
+                        else if (lastSlash2 == std::string::npos)
+                        {
+                            lastSlash = lastSlash1;
+                        }
+                        else 
+                        {
+                            lastSlash = std::max(lastSlash1, lastSlash2);
+                        }
+        
+                        if (lastSlash != std::string::npos)
+                        {
+                            lastSlash++;
+                            if (trimmedPath.compare(lastSlash, trimmedPath.length() - lastSlash,
+                                                    file_name, 0, file_name.length()) == 0) 
+                            {
+                                // found a match
+                                found = true;
+                            }
+                            else
+                            {
+                                skipentry = true;
+                            } 
+                        }
                     }
                 }
             }
-    
             // Continue parsing if found only
-            if(found)
+            else
             {
                 if (remaining >= PageNo_len &&
                     memcmp(&(*start), PageNo, PageNo_len) == 0) 

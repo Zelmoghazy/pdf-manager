@@ -1,5 +1,30 @@
 #include "pdfmanager.hpp"
 
+static CompareFunc timestampSort() 
+{
+    return [](QWidget* a, QWidget* b) {
+        WordWrapButton* btnA = qobject_cast<WordWrapButton*>(a);
+        WordWrapButton* btnB = qobject_cast<WordWrapButton*>(b);
+        if (btnA && btnB) {
+            return btnA->getTimestamp() > btnB->getTimestamp(); // Newer on top (descending)
+        }
+        return false;
+    };
+}
+    
+static CompareFunc alphabeticalSort() 
+{
+    return [](QWidget* a, QWidget* b) {
+        WordWrapButton* btnA = qobject_cast<WordWrapButton*>(a);
+        WordWrapButton* btnB = qobject_cast<WordWrapButton*>(b);
+        if (btnA && btnB) {
+            return btnA->getText().toLower() < btnB->getText().toLower(); // Alphabetical (ascending)
+        }
+        return false;
+    };
+}
+
+
 PDFManager::PDFManager(QWidget *parent)
 {
     setWindowTitle("PDF Manager");
@@ -19,53 +44,59 @@ PDFManager::PDFManager(QWidget *parent)
     createMenuBar();
     createSidebar();
 
-
     contentArea = new QWidget(this);
     setCentralWidget(contentArea);
     contentLayout = new QVBoxLayout(contentArea);
     contentLayout->setContentsMargins(5, 5, 5, 5);
 
-        
     createSearchbar();
     createCategoriesArea();
 
     loadData();
     initApp();
 
-    QPushButton* switchViewBtn = new QPushButton("Switch View");
-    connect(switchViewBtn, &QPushButton::clicked, 
-        this, &PDFManager::switchPDFView);
-
     contentLayout->addWidget(searchBar);
-    contentLayout->addWidget(switchViewBtn);
     contentLayout->addWidget(categoriesArea);
 
     updateMainSidebarButtons();
 }
 
+void PDFManager::addMainSidebarSection(const QString &text, const QIcon &icon, int idx) 
+{
+    QPushButton *btn = new QPushButton();
+
+    btn->setIcon(icon);
+    btn->setText(text);
+    btn->setIconSize(QSize(24, 24));
+    btn->setMinimumHeight(40);
+
+    connect(btn, &QPushButton::clicked,
+            [this, idx]() 
+            {
+                toggleSecondaryDock(idx); 
+            });
+
+    mainSidebarLayout->addWidget(btn);
+    mainSidebarButtons.append(btn);
+}
+
 void PDFManager::createSidebar() 
 {
-    QDockWidget *mainSidebarDock = new QDockWidget("Main Sidebar", this);
-    mainSidebarDock->setFeatures(QDockWidget::NoDockWidgetFeatures); 
-    mainSidebarDock->setAllowedAreas(Qt::LeftDockWidgetArea);
-    mainSidebarDock->setTitleBarWidget(new QWidget());
-
     QIcon homeIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\home.png");
     QIcon computerIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\computer.png");
     QIcon filesIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\google-docs.png");
     QIcon settingsIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\settings.png");
     QIcon helpIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\help.png");
 
-    // Define button data with standard Qt icons and secondary optionss
     buttonDataList = {
-        {"Home",
+        {"Search",
          homeIcon,
-         "Home Page",
+         "Search Contents",
          {"Dashboard", "Shortcuts", "Recent Items"}},
 
-        {"Computer",
+        {"Layout",
          computerIcon,
-         "Computer Settings",
+         "Layout",
          {"System Info", "Disk Management", "Device Manager", "Network"}},
 
         {"Files",
@@ -81,7 +112,14 @@ void PDFManager::createSidebar()
         {"Help",
          helpIcon,
          "Help & Support",
-         {"Documentation", "FAQ", "Contact Support", "About"}}};
+         {"Documentation", "FAQ", "Contact Support", "About"}}
+    };
+
+    /* ---------------------------- Main Sidebar ---------------------------- */
+    QDockWidget *mainSidebarDock = new QDockWidget("Main Sidebar", this);
+    mainSidebarDock->setFeatures(QDockWidget::NoDockWidgetFeatures); 
+    mainSidebarDock->setAllowedAreas(Qt::LeftDockWidgetArea);
+    mainSidebarDock->setTitleBarWidget(new QWidget()); // no title
 
     mainSidebar = new QWidget();
     mainSidebar->setMinimumWidth(mainCollapsedWidth);
@@ -92,23 +130,9 @@ void PDFManager::createSidebar()
     mainSidebarLayout->setContentsMargins(5, 10, 5, 10);
     mainSidebarLayout->setSpacing(5);
 
-    for(int i = 0; i <  buttonDataList.size(); ++i) 
+    for(int i = 0; i < buttonDataList.size(); ++i) 
     {
-        const auto &buttonData = buttonDataList[i];
-        QPushButton *btn = new QPushButton();
-
-        QIcon icon = buttonData.icon;
-        btn->setIcon(icon);
-        btn->setText(buttonData.text);
-        btn->setIconSize(QSize(24, 24));
-        btn->setMinimumHeight(40);
-
-        connect(btn, &QPushButton::clicked,
-            [this, i]() {
-                toggleSecondaryDock(i); 
-            });
-        mainSidebarLayout->addWidget(btn);
-        mainSidebarButtons.append(btn);
+        addMainSidebarSection(buttonDataList[i].text, buttonDataList[i].icon, i);
     }
     
     mainSidebarLayout->addStretch();
@@ -123,6 +147,8 @@ void PDFManager::createSidebar()
 
     addDockWidget(Qt::LeftDockWidgetArea, mainSidebarDock);
 
+    /*--------------------------------------------------------------------------*/
+
     // Create secondary dock widget
     secondaryDock = new QDockWidget("Options", this);
     secondaryDock->setAllowedAreas(Qt::LeftDockWidgetArea |
@@ -130,36 +156,42 @@ void PDFManager::createSidebar()
     secondaryDock->setFeatures(QDockWidget::NoDockWidgetFeatures); 
     secondaryDock->setMinimumWidth(secondaryDockWidth);
 
-    //QPalette palette = secondaryDock->palette();
-    //palette.setColor(QPalette::Window, QColor("#21222c"));
-    //secondaryDock->setPalette(palette);
-    //secondaryDock->setAutoFillBackground(true);
-    //secondaryDock->setStyleSheet("background-color: #21222c;");
-
-    // Create container widget for the dock
-    QWidget *dockContents = new QWidget(secondaryDock);
+    QWidget *dockContents = new QWidget();
     QVBoxLayout *dockLayout = new QVBoxLayout(dockContents);
     dockLayout->setContentsMargins(10, 10, 10, 10);
 
-    // Create stacked widget for secondary dock content
     secondaryStack = new QStackedWidget(dockContents);
 
-    // Create secondary panels for each main button
-
-    searchWidget = new PDFSearchWidget(secondaryStack);
+    // add options 
+    searchWidget = new PDFSearchWidget(dockContents);
     secondaryStack->addWidget(searchWidget);
 
     // Connect to its signals if needed
-    connect(searchWidget, &PDFSearchWidget::searchStarted, this, []()
+    connect(searchWidget, &PDFSearchWidget::searchStarted, this, 
+    []()
     {
         qDebug() << "Search started";
     });
-    connect(searchWidget, &PDFSearchWidget::searchFinished, this, [this]()
+
+    connect(searchWidget, &PDFSearchWidget::searchFinished, this, 
+    [this]()
     {
         QMessageBox::information(this, "Search" , "Search done !", QMessageBox::Ok);
     });
 
-    for (int i = 1; i < buttonDataList.size(); ++i) 
+    QWidget *viewPanel = new QWidget();
+    auto viewLayout = new QVBoxLayout(viewPanel);
+
+    QPushButton* switchViewBtn = new QPushButton("Switch View");
+    connect(switchViewBtn, &QPushButton::clicked, 
+            this, &PDFManager::switchPDFView);
+
+    viewLayout->addWidget(switchViewBtn);
+    viewLayout->addStretch();
+
+    secondaryStack->addWidget(viewPanel);
+
+    for (int i = 2; i < buttonDataList.size(); ++i) 
     {
         QWidget *panel = createSecondaryPanel(i);
         secondaryStack->addWidget(panel);
@@ -189,8 +221,8 @@ void PDFManager::createSidebar()
     // Setup animation for main sidebar
     mainSidebarAnimation = new QPropertyAnimation(mainSidebar, "minimumWidth");
     mainSidebarAnimation->setDuration(10);
-    connect(mainSidebarAnimation, &QPropertyAnimation::finished, this,
-            &PDFManager::updateMainSidebarButtons);
+    connect(mainSidebarAnimation, &QPropertyAnimation::finished, 
+            this, &PDFManager::updateMainSidebarButtons);
 }
 
 void PDFManager::toggleMainSidebar() 
@@ -339,7 +371,6 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
                 Qt::KeepAspectRatio, 
                 Qt::SmoothTransformation
             );
-        
         }
     }
 
@@ -362,28 +393,26 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
             }
         });
 
-    int addButtonIndex = cat.layout->indexOf(
-        cat.layout->itemAt(cat.layout->count() - 2)->widget()
-    );
-    cat.layout->insertWidget(addButtonIndex, pdf.button);
+    cat.layout->addWidget(pdf.button);
+
+    //------------------------------------------------------------------------
             
-    WordWrapButton* flowButton = new WordWrapButton("", nullptr);
+    pdf.flowButton = new WordWrapButton("", nullptr);
 
-    flowButton->setMinimumSize(squareSize, squareSize);
-    flowButton->setMaximumSize(squareSize, squareSize);
-    flowButton->setFixedSize(squareSize, squareSize);
-    flowButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    pdf.flowButton->setMinimumSize(squareSize, squareSize);
+    pdf.flowButton->setMaximumSize(squareSize, squareSize);
+    pdf.flowButton->setFixedSize(squareSize, squareSize);
+    pdf.flowButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-
-    flowButton->setIcon(QIcon(pixmap));
-    flowButton->setIconSize(QSize(squareSize, squareSize));
+    pdf.flowButton->setIcon(QIcon(pixmap));
+    pdf.flowButton->setIconSize(QSize(squareSize, squareSize));
         
-    flowButton->setToolTip(QString("%1 (Page %2 of %3)")
+    pdf.flowButton->setToolTip(QString("%1 (Page %2 of %3)")
                         .arg(QString::fromStdString(pdf.file_name))
                         .arg(pdf.page_num)
                         .arg(pdf.total_page_num));
 
-    connect(flowButton, &WordWrapButton::clicked, this,
+    connect(pdf.flowButton, &WordWrapButton::clicked, this,
         [this, filePath = pdf.file_path, button = cat.addButton]() 
         { 
             for (auto& myCat : PDFcats) {
@@ -394,7 +423,9 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
             }
         });
 
-    cat.flowLayout->addWidget(flowButton);
+    cat.flowLayout->addWidget(pdf.flowButton);
+
+    updateTimestamps(pdf, pdf.last_opened_time);
 }
 
 void PDFManager::initApp() 
@@ -436,7 +467,7 @@ void PDFManager::setFont()
     } 
     else 
     {
-        qWarning() << "Failed to load font from path:" << fontPath << ", a default font is used";
+        qWarning() << "Failed to load font from path:" << fontPath << ", a default font is used instead !";
         defaultFont = new QFont("Open Sans", 18);
     }
 
@@ -524,7 +555,8 @@ void PDFManager::createMenuBar()
     QFont menuFont("Open Sans", 18);
     menuBar->setFont(*defaultFont);
 
-    foreach (QWidget *widget, menuBar->findChildren<QWidget *>()) {
+    foreach (QWidget *widget, menuBar->findChildren<QWidget *>()) 
+    {
         widget->setFont(*defaultFont);
     }
 
@@ -618,6 +650,7 @@ void PDFManager::createCategoriesArea()
         "    color: #6d6d6d;"              
         "}"
     );
+    toolbox->setFixedHeight(600);
 
     // make toolbox scrollable
     categoriesArea->setWidget(toolbox);
@@ -722,7 +755,8 @@ void PDFManager::filterToolBoxItems()
     {
         for (auto &cat : PDFcats) {
             for (auto &pdf : cat.PDFFiles) {
-                pdf.button->setVisible(true); 
+                pdf.button->setVisible(true);
+                pdf.flowButton->setVisible(true);
             }
         }
         for (int i = 0; i < toolbox->count(); ++i) {
@@ -740,6 +774,7 @@ void PDFManager::filterToolBoxItems()
             bool match = QString::fromStdString(pdf.file_name)
                                 .contains(searchText, Qt::CaseInsensitive);
             pdf.button->setVisible(match);
+            pdf.flowButton->setVisible(match);
             // at least one child matches for the toolbox to be enabled
             if (match){
                 childMatch = true;
@@ -819,6 +854,12 @@ void PDFManager::switchPDFView()
     }
 }
 
+void PDFManager::sortCatPDFs(PDFCat& category, CompareFunc sortfunc) 
+{
+    category.layout->setCompareFunc(sortfunc);
+    category.flowLayout->setCompareFunc(sortfunc);
+}
+
 void PDFManager::setupNewCat(PDFCat& cat)
 {
     cat.container = new QWidget(this);
@@ -826,13 +867,11 @@ void PDFManager::setupNewCat(PDFCat& cat)
                                  "    background-color: #1e1e1e;"
                                  "}");
 
-    cat.layout = new QVBoxLayout();
+    auto VViewLayout = new QVBoxLayout();
+
+    cat.layout = new SortedVBoxLayout(timestampSort());
     cat.layout->setSpacing(5);
     cat.layout->setContentsMargins(30, 10, 30, 10);
-
-    cat.flowLayout = new FlowLayout();
-    cat.flowLayout->setSpacing(5);
-    cat.flowLayout->setContentsMargins(30, 10, 30, 10);
 
     // Add and center an add button to add new pdfs
     cat.addButton = new QPushButton("+");
@@ -843,8 +882,9 @@ void PDFManager::setupNewCat(PDFCat& cat)
     centerLayout->addWidget(cat.addButton);
     centerLayout->addStretch();
 
-    cat.layout->addLayout(centerLayout);
-    cat.layout->addStretch(1);
+    VViewLayout->addLayout(cat.layout);
+    VViewLayout->addLayout(centerLayout);
+    VViewLayout->addStretch(1);
 
     connect(cat.addButton, &QPushButton::clicked, this,
             // I may sort categories or do other stuff like edit the name 
@@ -859,13 +899,47 @@ void PDFManager::setupNewCat(PDFCat& cat)
                 }
             });
 
+    auto FViewLayout = new QVBoxLayout();
+
+    cat.flowLayout = new SortedFlowLayout(timestampSort());
+    cat.flowLayout->setSpacing(5);
+    cat.flowLayout->setContentsMargins(30, 10, 30, 10);
+
+    cat.flowAddButton = new QPushButton("+");
+    cat.flowAddButton->setFixedSize(30, 30);
+
+    auto flowCenterLayout = new QHBoxLayout();
+    flowCenterLayout->addStretch();
+    flowCenterLayout->addWidget(cat.flowAddButton);
+    flowCenterLayout->addStretch();
+    //cat.flowAddButton->setMinimumSize(squareSize, squareSize);
+    //cat.flowAddButton->setMaximumSize(squareSize, squareSize);
+    //cat.flowAddButton->setFixedSize(squareSize, squareSize);
+    //cat.flowAddButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    FViewLayout->addLayout(cat.flowLayout);
+    FViewLayout->addLayout(flowCenterLayout);
+    FViewLayout->addStretch(1);
+
+    connect(cat.flowAddButton, &QPushButton::clicked, this,
+        // I may sort categories or do other stuff like edit the name 
+        // so I have to look up the category using the button
+        [this, button = cat.flowAddButton]() 
+        {
+            for (auto& myCat : PDFcats) {
+                if (myCat.flowAddButton == button) {
+                    this->addNewPDF(myCat);
+                    break;
+                }
+            }
+        });
+
     cat.stackedWidget = new QStackedWidget(cat.container);
     
     QWidget* vboxContainer = new QWidget();
     QWidget* flowContainer = new QWidget();
     
-    vboxContainer->setLayout(cat.layout);       
-    flowContainer->setLayout(cat.flowLayout);   
+    vboxContainer->setLayout(VViewLayout);       
+    flowContainer->setLayout(FViewLayout);   
     
     cat.stackedWidget->addWidget(vboxContainer); // Index 0
     cat.stackedWidget->addWidget(flowContainer); // Index 1
@@ -898,7 +972,7 @@ void PDFManager::setupNewPDF(PDFCat &category, QString &filePath)
         
         newPDF.file_name = fileName.toStdString();
         newPDF.file_path = filePath.toStdString();
-    
+
         setupPDFButton(newPDF, category);
             
         category.PDFFiles.push_back(newPDF);
@@ -928,6 +1002,18 @@ void PDFManager::addNewPDF(PDFCat& category)
     }
 
     setupNewPDF(category, LastBrowsedPath);
+}
+
+void PDFManager::updateTimestamps(PDFInfo &pdf, qint64 time)
+{
+    pdf.last_opened_time = time;
+    pdf.button->setTimestamp(time);
+    pdf.flowButton->setTimestamp(time);
+}
+
+void PDFManager::updateTimestamps(PDFInfo &pdf)
+{
+    PDFManager::updateTimestamps(pdf, QDateTime::currentSecsSinceEpoch());
 }
 
 void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
@@ -983,21 +1069,25 @@ void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
 #ifdef Q_OS_WIN
     QStringList arguments;
         
-    // If we have a stored page number, open to that page
-    for (const auto& pdf : cat.PDFFiles) 
+    // Open to stored page
+    for (auto& pdf : cat.PDFFiles) 
     {
-        if ((QString::fromStdString(pdf.file_name) == fileName) &&
-            pdf.page_num > 0) 
+        if ((QString::fromStdString(pdf.file_name) == fileName)) 
         {
             arguments << QString("-new-window");
             arguments << QString("-view");
             arguments << QString("single page");
             arguments << QString("-page");
             arguments << QString::number(pdf.page_num);
+
+            updateTimestamps(pdf);
+            sortCatPDFs(cat, timestampSort());
             break;
         }
     }
     arguments << filePath;
+
+    qDebug()<< arguments;
 
     // Kill sumatra as we depend on the first process
     if(firstProcess) {
@@ -1056,6 +1146,14 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
                 if (pdf.button) 
                 {
                     pdf.button->setText(QString("%1 (Page %2 of %3)")
+                        .arg(QString::fromStdString(pdf.file_name))
+                        .arg(pdf.page_num)
+                        .arg(pdf.total_page_num));
+                }
+
+                if (pdf.flowButton) 
+                {
+                    pdf.flowButton->setToolTip(QString("%1 (Page %2 of %3)")
                         .arg(QString::fromStdString(pdf.file_name))
                         .arg(pdf.page_num)
                         .arg(pdf.total_page_num));
@@ -1204,11 +1302,13 @@ bool PDFManager::serializeData()
 
     for (auto &cat : PDFcats) 
     {
-        file << cat.category << ", " << cat.PDFFiles.size() << "\n";
+        file << cat.category << "," << cat.PDFFiles.size() << "\n";
 
         for (const auto &pdf : cat.PDFFiles) 
         {
-            file << pdf.file_name << ", " << pdf.file_path << ", " << pdf.page_num
+            file <<  "\"" << pdf.file_name <<  "\"" <<  "," 
+                 <<  "\"" << pdf.file_path << "\"" << "," 
+                 << pdf.page_num << ","  << pdf.last_opened_time
                  << "\n";
         }
 
@@ -1289,62 +1389,87 @@ bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat)
 {
     std::string line;
 
-    if (!std::getline(in, line) || line.empty()) {
+    if (!std::getline(in, line)) {
         return false;
     }
 
-    size_t comma_pos = line.find(", ");
+    line = trim(line);
+
+    if(line.empty()) {
+        return false;
+    }
+
+    // Category
+    size_t comma_pos = line.find(",");
     if (comma_pos == std::string::npos) {
         return false;
     }
-
-    // Get the category and number of files inside it 
     cat.category = line.substr(0, comma_pos);
-    int fileCount = std::stoi(line.substr(comma_pos + 2));
+    int fileCount = std::stoi(line.substr(comma_pos + 1));
 
     cat.PDFFiles.clear();
 
+    // Category entries
     for (int i = 0; i < fileCount; i++) 
     {
         if (!std::getline(in, line)) {
             return false;
         }
 
-        std::istringstream iss(line);
         PDFInfo pdf;
+        size_t curr_pos = 0;
 
         // File name
-        std::getline(iss, pdf.file_name, ',');  // read till the comma
-        if (pdf.file_name.empty()) {
+        size_t fileNameQuote1 = line.find('"', curr_pos);
+        if (fileNameQuote1 == std::string::npos) 
             return false;
-        }
-        pdf.file_name = trim(pdf.file_name);
+        size_t fileNameQuote2 = line.find('"', fileNameQuote1 + 1);
+        if (fileNameQuote2 == std::string::npos) 
+            return false;
+        pdf.file_name = line.substr(fileNameQuote1 + 1, fileNameQuote2 - fileNameQuote1 - 1);
+        curr_pos = fileNameQuote2 + 2; 
 
         // File Path
-        std::getline(iss, pdf.file_path, ',');
-        if (pdf.file_path.empty()) {
+        size_t filePathQuote1 = line.find('"', curr_pos);
+        if (filePathQuote1 == std::string::npos) 
             return false;
-        }
-        pdf.file_path = trim(pdf.file_path);
+        size_t filePathQuote2 = line.find('"', filePathQuote1 + 1);
+        if (filePathQuote2 == std::string::npos) 
+            return false;
+        pdf.file_path = line.substr(filePathQuote1 + 1, filePathQuote2 - filePathQuote1 - 1);
+        curr_pos = filePathQuote2 + 2; 
 
-        if(!verifyFilePath(pdf)) 
-        {
+        if(!verifyFilePath(pdf)){
             continue;
         }
 
-        // Last page number
+        std::string remaining = line.substr(curr_pos);
+
+        std::istringstream iss(remaining);
+
         std::string page_num_str;
-        std::getline(iss, page_num_str);
+        std::getline(iss, page_num_str, ',');  
         if (page_num_str.empty()) {
             return false;
         }
-        page_num_str = trim(page_num_str);
         pdf.page_num = std::stoi(page_num_str);
+        
+        std::string page_timestamp_str;
+        std::getline(iss, page_timestamp_str);  
+        if (page_timestamp_str.empty()) {
+            return false;
+        }
+        pdf.last_opened_time = std::stoll(page_timestamp_str);
 
         cat.PDFFiles.push_back(pdf);
     }
 
-    std::getline(in, line);
+    if (!std::getline(in, line)) {
+        return true; 
+    }
+    if (!trim(line).empty()) {
+        return false;
+    }
     
     return true;
 }

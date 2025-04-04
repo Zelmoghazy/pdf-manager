@@ -19,21 +19,23 @@
 #include "custom_button.hpp"
 #include "flowlayout.h"
 #include "utils.hpp"
+#include "custom_layout.hpp"
 
 struct PDFInfo
 {
-    std::string file_name;  // The represented name in the UI, the user can edit it to whatever
-    std::string file_path;  // What actually distinguishes the file
+    std::string file_name;          // The represented name in the UI, the user can edit it to whatever
+    std::string file_path;          // What actually distinguishes the file
 
-    bool found = false;     // whether it was found while parsing
-    int page_num = 0;       // last opened page
+    bool found = false;             // whether it was found while parsing
+    int page_num = 0;               // last opened page
 
     int total_page_num = 0;
-    int last_opened_time = 0;   // sort using it
+    qint64 last_opened_time = 0;       // sort using it
 
-    std::string mode;       // to be used to add options like open in full screen or presentation mode or whatever
+    std::string mode;               // to be used to add options like open in full screen or presentation mode or whatever
 
     WordWrapButton *button = nullptr;
+    WordWrapButton *flowButton = nullptr;
 
     PDFInfo() {}
     PDFInfo(const std::string filename) : file_name(filename){}
@@ -50,13 +52,15 @@ struct PDFCat
     // each category has a number of pdfs 
     std::vector<PDFInfo> PDFFiles;
 
-    QWidget     *container = nullptr;
-    QStackedWidget* stackedWidget = nullptr;
-    QVBoxLayout *layout = nullptr;
-    FlowLayout* flowLayout = nullptr; 
+    QWidget                        *container     = nullptr;
+    QStackedWidget                 *stackedWidget = nullptr;
+
+    SortedVBoxLayout*           layout        = nullptr;
+    SortedFlowLayout*           flowLayout    = nullptr; 
 
     // to add new categories
-    QPushButton *addButton = nullptr;
+    QPushButton     *addButton      = nullptr;
+    QPushButton     *flowAddButton  = nullptr;
 
     PDFCat() {}
     PDFCat(const std::string cat_name) : category(cat_name){}

@@ -8,9 +8,13 @@
 
 class WordWrapButton : public QPushButton 
 {
+    Q_OBJECT
 public:
     WordWrapButton(const QString& text, QWidget* parent);
     void setText(const QString& text);
+    void setTimestamp(qint64 time);
+    QString getText();
+    qint64 getTimestamp();
 protected:
     void resizeEvent(QResizeEvent* event) override;
 private:
@@ -19,4 +23,5 @@ private:
 
     QString m_text;
     QLabel* m_label;
+    qint64  m_timestamp;
 };

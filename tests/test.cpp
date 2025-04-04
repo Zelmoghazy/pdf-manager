@@ -35,6 +35,23 @@ std::string trim(const std::string& str)
     return str.substr(start, end - start + 1);
 }
 
+std::string readFile(const std::string& filepath) 
+{
+    std::ifstream file;
+    try{
+        file.open(filepath);
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        file.close();
+        return buffer.str();
+    }    
+    catch(std::ifstream::failure e)
+    {
+        std::cout << "ERROR::SHADER::FILE_NOT_SUCCESFULLY_READ" << std::endl;
+        return nullptr;
+    }
+}
+
 struct PDFInfo
 {
     std::string file_name;
@@ -48,6 +65,7 @@ struct PDFInfo
 
     }
 
+    #if 0
     void parseSumatraSettings(const std::string &settings_path) 
     {
         std::ifstream file(settings_path, std::ios::binary);
@@ -99,6 +117,7 @@ struct PDFInfo
         
         int bracket_level = 1;
         bool insidePdfEntry = false;
+        bool skipentry = false;
     
         while (std::getline(file, line))
         {
@@ -116,6 +135,7 @@ struct PDFInfo
                 if (bracket_level == 2)  // we are inside a file state
                 {
                     insidePdfEntry = true;
+                    skipentry = false;
                 }
                 continue;
             }
@@ -133,58 +153,65 @@ struct PDFInfo
             }
     
             // start parsing entries
-            if (insidePdfEntry)
+            if (insidePdfEntry && !skipentry)
             {
                 size_t remaining = std::distance(start, end);
-    
-                // Check filename first for a match
-                if (remaining >= filePath_len &&  
-                    (memcmp(&(*start), filePath, filePath_len) == 0)) 
+                
+                if(!found)
                 {
-                    auto equals_pos = std::find(start, end, '=');
-    
-                    if (equals_pos != end)
+                    // Check filename first for a match
+                    if (remaining >= filePath_len &&  
+                        (memcmp(&(*start), filePath, filePath_len) == 0)) 
                     {
-                        // Get the full path
-                        std::string fullPath(equals_pos + 1, end);
-    
-                        // Trim the path
-                        std::string::const_iterator path_start, path_end;
-                        trim(fullPath, path_start, path_end);
-    
-                        // Convert to std::string for easier operations
-                        std::string trimmedPath(path_start, path_end);
-    
-                        size_t lastSlash1 = trimmedPath.rfind('\\');
-                        size_t lastSlash2 = trimmedPath.rfind('/' );
-                        size_t lastSlash;
-    
-                        if (lastSlash1 == std::string::npos)
+                        auto equals_pos = std::find(start, end, '=');
+        
+                        if (equals_pos != end)
                         {
-                            lastSlash = lastSlash2;
-                        } 
-                        else if (lastSlash2 == std::string::npos)
-                        {
-                            lastSlash = lastSlash1;
-                        } else {
-                            lastSlash = std::max(lastSlash1, lastSlash2);
-                        }
-    
-                        if (lastSlash != std::string::npos)
-                        {
-                            lastSlash++;
-                            if (trimmedPath.compare(lastSlash, trimmedPath.length() - lastSlash,
-                                                    file_name, 0, file_name.length()) == 0) 
+                            // Get the full path
+                            std::string fullPath(equals_pos + 1, end);
+        
+                            // Trim the path
+                            std::string::const_iterator path_start, path_end;
+                            trim(fullPath, path_start, path_end);
+        
+                            // Convert to std::string for easier operations
+                            std::string trimmedPath(path_start, path_end);
+        
+                            size_t lastSlash1 = trimmedPath.rfind('\\');
+                            size_t lastSlash2 = trimmedPath.rfind('/' );
+                            size_t lastSlash;
+        
+                            if (lastSlash1 == std::string::npos)
                             {
-                                // found a match
-                                found = true;
+                                lastSlash = lastSlash2;
                             } 
+                            else if (lastSlash2 == std::string::npos)
+                            {
+                                lastSlash = lastSlash1;
+                            } else {
+                                lastSlash = std::max(lastSlash1, lastSlash2);
+                            }
+        
+                            if (lastSlash != std::string::npos)
+                            {
+                                lastSlash++;
+                                if (trimmedPath.compare(lastSlash, trimmedPath.length() - lastSlash,
+                                                        file_name, 0, file_name.length()) == 0) 
+                                {
+                                    // found a match
+                                    found = true;
+                                }
+                                else
+                                {
+                                    skipentry = true;
+                                } 
+                            }
                         }
                     }
+
                 }
-    
                 // Continue parsing if found only
-                if(found)
+                else
                 {
                     if (remaining >= page_no_len &&
                         memcmp(&(*start), page_no, page_no_len) == 0) 
@@ -202,11 +229,49 @@ struct PDFInfo
                             page_num = std::stoi(std::string(pageNo_start, pageNo_end));
                             return;
                         }
-                    } 
+                    }
+                    // and other stuff if wanted 
                 }
             }
         }
     }
+    #endif
+
+    #if 1
+    void parseSumatraSettings(const std::string &settings_path) 
+    {
+        std::string settings = readFile(settings_path);
+        size_t pos = settings.find(file_name);
+
+        if(pos == std::string::npos) 
+            return;
+
+        found = true;
+
+        std::istringstream stream(settings.substr(pos));
+        std::string line;
+        line.reserve(512);
+    
+        while (std::getline(stream, line))
+        {
+            if (line.find("PageNo") != std::string::npos)
+            {
+                auto equals_pos = line.find('=');
+                if (equals_pos != std::string::npos)
+                {
+                    std::string pageNoStr = line.substr(equals_pos + 1);
+    
+                    // Trim the page number
+                    std::string::const_iterator pageNo_start, pageNo_end;
+                    trim(pageNoStr, pageNo_start, pageNo_end);
+    
+                    page_num = std::stoi(std::string(pageNo_start, pageNo_end));
+                    return;
+                }
+            }
+        }
+    }
+    #endif
 };
 
 TEST_CASE("PDFInfo test1", "[pdf_info]") {
@@ -258,12 +323,19 @@ TEST_CASE("PDFInfo test7", "[pdf_info]") {
     REQUIRE(info.page_num == 1247);
 }
 
+TEST_CASE("PDFInfo test8", "[pdf_info]") {
+    PDFInfo info("mastering embedded system from.pdf");
+    info.parseSumatraSettings("../SumatraPDF-settings.txt");
+    REQUIRE(info.found == false);
+    REQUIRE(info.page_num == 0);
+}
+
 TEST_CASE("PDFInfo benchmark", "[benchmark]") {
     // Benchmark multiple iterations to test caching effects
     BENCHMARK("Parse settings - repeated 10 times") {
         bool result = false;
-        for (int i = 0; i < 10; i++) {
-            PDFInfo info("mastering embedded system from scratch.pdf");
+        for (int i = 0; i < 100; i++) {
+            PDFInfo info("wrong.pdf");
             info.parseSumatraSettings("../SumatraPDF-settings.txt");
             result |= info.found;
         }
