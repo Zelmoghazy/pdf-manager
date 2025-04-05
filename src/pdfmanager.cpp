@@ -1,4 +1,5 @@
 #include "pdfmanager.hpp"
+#include "Prof.h"
 
 static CompareFunc timestampSort() 
 {
@@ -27,6 +28,8 @@ static CompareFunc alphabeticalSort()
 
 PDFManager::PDFManager(QWidget *parent)
 {
+    START_TIMING("STARTUP TIME");
+
     setWindowTitle("PDF Manager");
     setWindowFlags(Qt::Window);
     resize(800, 400);
@@ -34,15 +37,18 @@ PDFManager::PDFManager(QWidget *parent)
 #ifdef Q_OS_WIN
     setWindowIcon(QIcon(QDir::currentPath() + "\\" + "Images" + "\\" +  "icon.png")); 
 #endif 
-
     PDFManager::setFont();
 
     setDockOptions(QMainWindow::AnimatedDocks    | 
                    QMainWindow::AllowNestedDocks |
                    QMainWindow::AllowTabbedDocks);
 
+    START_TIMING("Creating Menu and Sidebar");
     createMenuBar();
+
     createSidebar();
+    STOP_TIMING("Creating Menu and Sidebar");
+
 
     contentArea = new QWidget(this);
     setCentralWidget(contentArea);
@@ -50,15 +56,27 @@ PDFManager::PDFManager(QWidget *parent)
     contentLayout->setContentsMargins(5, 5, 5, 5);
 
     createSearchbar();
+
+    START_TIMING("Creating Content Area");
     createCategoriesArea();
+    STOP_TIMING("Creating Content Area");
 
+    START_TIMING("Loading Data");
     loadData();
-    initApp();
+    STOP_TIMING("Loading Data");
 
+    START_TIMING("Init App");
+    initApp();
+    STOP_TIMING("Init App");
+
+    START_TIMING("Update Buttons");
     contentLayout->addWidget(searchBar);
     contentLayout->addWidget(categoriesArea);
-
     updateMainSidebarButtons();
+    STOP_TIMING("Update Buttons");
+
+    STOP_TIMING("STARTUP TIME");
+    SAVE_TIMING_RESULTS();
 }
 
 void PDFManager::addMainSidebarSection(const QString &text, const QIcon &icon, int idx) 
@@ -346,8 +364,6 @@ QWidget *PDFManager::createSecondaryPanel(int index)
 
 void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
 {
-    QImage image;
-    QPixmap pixmap;
     int squareSize = 100; 
 
     QString filePath = QString::fromStdString(pdf.file_path);
@@ -355,22 +371,32 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
 
     searchWidget->addDocument(filePath);
 
-    std::unique_ptr<Poppler::Document> document(Poppler::Document::load(filePath));
-    if (document && !document->isLocked()) 
+    if(hasCachedThumbnail(filePath) && pdf.total_page_num > 0) 
     {
-        pdf.total_page_num = document->numPages();
-
-        std::unique_ptr<Poppler::Page> pdfPage(document->page(0));
-    
-        if (pdfPage) 
+        pdf.thumbnail = getCachedThumbnail(filePath);
+    } 
+    else 
+    {
+        std::unique_ptr<Poppler::Document> document(Poppler::Document::load(filePath));
+        if (document && !document->isLocked()) 
         {
-            image = pdfPage->renderToImage(72.0, 72.0); // 72 DPI
+            pdf.total_page_num = document->numPages();
+
+            std::unique_ptr<Poppler::Page> pdfPage(document->page(0));
+    
+            if (pdfPage) 
+            {
+    
+                QImage image = pdfPage->renderToImage(72.0, 72.0); // 72 DPI
         
-            pixmap = QPixmap::fromImage(image).scaled(
-                squareSize, squareSize, 
-                Qt::KeepAspectRatio, 
-                Qt::SmoothTransformation
-            );
+                pdf.thumbnail = QPixmap::fromImage(image).scaled(
+                    squareSize, squareSize, 
+                    Qt::KeepAspectRatio, 
+                    Qt::SmoothTransformation
+                );
+
+                saveThumbnail(filePath, pdf.thumbnail);
+            }
         }
     }
 
@@ -404,7 +430,7 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
     pdf.flowButton->setFixedSize(squareSize, squareSize);
     pdf.flowButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-    pdf.flowButton->setIcon(QIcon(pixmap));
+    pdf.flowButton->setIcon(QIcon(pdf.thumbnail));
     pdf.flowButton->setIconSize(QSize(squareSize, squareSize));
         
     pdf.flowButton->setToolTip(QString("%1 (Page %2 of %3)")
@@ -428,11 +454,50 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
     updateTimestamps(pdf, pdf.last_opened_time);
 }
 
+bool PDFManager::hasCachedThumbnail(const QString& pdfFilePath)
+{
+    QFileInfo pdfInfo(pdfFilePath);
+    QString thumbPath =  QDir::currentPath() + "/cache"+ "/" + pdfInfo.fileName() + ".thumb.png";
+    QFileInfo thumbInfo(thumbPath);
+        
+    return thumbInfo.exists() && thumbInfo.lastModified() >= pdfInfo.lastModified();
+}
+
+QPixmap PDFManager::getCachedThumbnail(const QString& pdfFilePath)
+{
+    QPixmap result;
+    QFileInfo pdfInfo(pdfFilePath);
+
+    QString thumbPath = QDir::currentPath() + "/cache"+ "/" + pdfInfo.fileName() + ".thumb.png";
+        
+    if (result.load(thumbPath)) {
+        return result;
+    }
+        
+    return QPixmap(); // Return empty pixmap if not found
+}
+
+void PDFManager::saveThumbnail(const QString& pdfFilePath, const QPixmap& thumbnail)
+{
+    QDir cacheDir(QDir::currentPath() + "/cache");
+    if (!cacheDir.exists()) {
+        cacheDir.mkpath(".");
+    }
+    
+    QFileInfo pdfInfo(pdfFilePath);
+    QString thumbPath = QDir::currentPath() + "/cache"+ "/" + pdfInfo.fileName() + ".thumb.png";
+
+    if (!thumbnail.save(thumbPath, "PNG")) {
+        qWarning() << "Failed to save thumbnail:" << thumbPath;
+    }
+}
+
 void PDFManager::initApp() 
 {
     for (auto& cat : PDFcats)
     {
         PDFManager::setupNewCat(cat);
+
         toolbox->addItem(cat.container, cat.category.c_str());
 
         for (auto& pdf : cat.PDFFiles)
@@ -974,6 +1039,7 @@ void PDFManager::setupNewPDF(PDFCat &category, QString &filePath)
         newPDF.file_path = filePath.toStdString();
 
         setupPDFButton(newPDF, category);
+        updateTimestamps(newPDF);
             
         category.PDFFiles.push_back(newPDF);
 
@@ -1308,7 +1374,8 @@ bool PDFManager::serializeData()
         {
             file <<  "\"" << pdf.file_name <<  "\"" <<  "," 
                  <<  "\"" << pdf.file_path << "\"" << "," 
-                 << pdf.page_num << ","  << pdf.last_opened_time
+                 << pdf.page_num << "," << pdf.total_page_num << "," 
+                 << pdf.last_opened_time
                  << "\n";
         }
 
@@ -1453,6 +1520,13 @@ bool PDFManager::deserializePDFCat(std::istream &in, PDFCat &cat)
             return false;
         }
         pdf.page_num = std::stoi(page_num_str);
+
+        std::string total_page_number_str;
+        std::getline(iss, total_page_number_str, ',');  
+        if (total_page_number_str.empty()) {
+            return false;
+        }
+        pdf.total_page_num = std::stoi(total_page_number_str);
         
         std::string page_timestamp_str;
         std::getline(iss, page_timestamp_str);  

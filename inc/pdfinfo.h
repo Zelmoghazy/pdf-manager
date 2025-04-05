@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QString>
 #include <QStackedWidget>
+#include <QPixmap>
 
 #include <iostream>
 #include <fstream>
@@ -31,6 +32,9 @@ struct PDFInfo
 
     int total_page_num = 0;
     qint64 last_opened_time = 0;       // sort using it
+
+    QPixmap thumbnail;
+
 
     std::string mode;               // to be used to add options like open in full screen or presentation mode or whatever
 

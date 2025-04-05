@@ -88,6 +88,10 @@ class PDFManager : public QMainWindow
     void openPDF(PDFCat &cat, const QString &filePath);
     void handleFinished(int exitCode, QProcess::ExitStatus exitStatus, PDFCat &category);
 
+    QPixmap getCachedThumbnail(const QString& pdfFilePath);
+    void saveThumbnail(const QString& pdfFilePath, const QPixmap& thumbnail);
+    bool hasCachedThumbnail(const QString& pdfFilePath);
+
     void loadData();
     void loadConfig();
     bool serializeData();
