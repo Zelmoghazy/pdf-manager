@@ -4,8 +4,8 @@
 static CompareFunc timestampSort() 
 {
     return [](QWidget* a, QWidget* b) {
-        WordWrapButton* btnA = qobject_cast<WordWrapButton*>(a);
-        WordWrapButton* btnB = qobject_cast<WordWrapButton*>(b);
+        PDFButton* btnA = qobject_cast<PDFButton*>(a);
+        PDFButton* btnB = qobject_cast<PDFButton*>(b);
         if (btnA && btnB) {
             return btnA->getTimestamp() > btnB->getTimestamp(); // Newer on top (descending)
         }
@@ -16,8 +16,8 @@ static CompareFunc timestampSort()
 static CompareFunc alphabeticalSort() 
 {
     return [](QWidget* a, QWidget* b) {
-        WordWrapButton* btnA = qobject_cast<WordWrapButton*>(a);
-        WordWrapButton* btnB = qobject_cast<WordWrapButton*>(b);
+        PDFButton* btnA = qobject_cast<PDFButton*>(a);
+        PDFButton* btnB = qobject_cast<PDFButton*>(b);
         if (btnA && btnB) {
             return btnA->getText().toLower() < btnB->getText().toLower(); // Alphabetical (ascending)
         }
@@ -25,14 +25,14 @@ static CompareFunc alphabeticalSort()
     };
 }
 
-
 PDFManager::PDFManager(QWidget *parent)
 {
     START_TIMING("STARTUP TIME");
 
     setWindowTitle("PDF Manager");
     setWindowFlags(Qt::Window);
-    resize(800, 400);
+    //resize(800, 400);
+    setWindowState(Qt::WindowMaximized);
 
 #ifdef Q_OS_WIN
     setWindowIcon(QIcon(QDir::currentPath() + "\\" + "Images" + "\\" +  "icon.png")); 
@@ -106,21 +106,17 @@ void PDFManager::createSidebar()
     QIcon settingsIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\settings.png");
     QIcon helpIcon("C:\\Users\\zezo_\\Desktop\\Programming\\staticQT\\Images\\help.png");
 
-    buttonDataList = {
-        {"Search",
-         homeIcon,
-         "Search Contents",
-         {"Dashboard", "Shortcuts", "Recent Items"}},
-
+    buttonDataList = 
+    {
         {"Layout",
          computerIcon,
          "Layout",
          {"System Info", "Disk Management", "Device Manager", "Network"}},
 
-        {"Files",
-         filesIcon,
-         "File Browser",
-         {"Documents", "Pictures", "Music", "Videos", "Downloads"}},
+        {"Search",
+         homeIcon,
+         "Search Contents",
+         {"Dashboard", "Shortcuts", "Recent Items"}},
 
         {"Settings",
          settingsIcon,
@@ -180,6 +176,19 @@ void PDFManager::createSidebar()
 
     secondaryStack = new QStackedWidget(dockContents);
 
+
+    QWidget *viewPanel = new QWidget();
+    auto viewLayout = new QVBoxLayout(viewPanel);
+
+    QPushButton* switchViewBtn = new QPushButton("Switch View");
+    connect(switchViewBtn, &QPushButton::clicked, 
+            this, &PDFManager::switchPDFView);
+
+    viewLayout->addWidget(switchViewBtn);
+    viewLayout->addStretch();
+
+    secondaryStack->addWidget(viewPanel);
+
     // add options 
     searchWidget = new PDFSearchWidget(dockContents);
     secondaryStack->addWidget(searchWidget);
@@ -196,18 +205,6 @@ void PDFManager::createSidebar()
     {
         QMessageBox::information(this, "Search" , "Search done !", QMessageBox::Ok);
     });
-
-    QWidget *viewPanel = new QWidget();
-    auto viewLayout = new QVBoxLayout(viewPanel);
-
-    QPushButton* switchViewBtn = new QPushButton("Switch View");
-    connect(switchViewBtn, &QPushButton::clicked, 
-            this, &PDFManager::switchPDFView);
-
-    viewLayout->addWidget(switchViewBtn);
-    viewLayout->addStretch();
-
-    secondaryStack->addWidget(viewPanel);
 
     for (int i = 2; i < buttonDataList.size(); ++i) 
     {
@@ -386,7 +383,6 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
     
             if (pdfPage) 
             {
-    
                 QImage image = pdfPage->renderToImage(72.0, 72.0); // 72 DPI
         
                 pdf.thumbnail = QPixmap::fromImage(image).scaled(
@@ -400,7 +396,7 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
         }
     }
 
-    pdf.button = new WordWrapButton(QString("%1 (Page %2 of %3)")
+    pdf.button = new PDFButton(QString("%1 (Page %2 of %3)")
                                 .arg(QString::fromStdString(pdf.file_name))
                                 .arg(pdf.page_num)
                                 .arg(pdf.total_page_num), nullptr);
@@ -408,7 +404,7 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
     pdf.button->setSizePolicy(QSizePolicy::Expanding,
                               QSizePolicy::Expanding);
 
-    connect(pdf.button, &WordWrapButton::clicked, this,
+    connect(pdf.button, &PDFButton::clicked, this,
         [this, filePath = pdf.file_path, button = cat.addButton]() 
         { 
             for (auto& myCat : PDFcats) {
@@ -419,11 +415,44 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
             }
         });
 
+    connect(pdf.button, &PDFButton::editRequested, this, 
+    [this, &pdf, &cat]() {
+        bool ok;
+        QString newName = QInputDialog::getText(
+            nullptr, 
+            "Edit PDF Name", 
+            "Enter new name:", 
+            QLineEdit::Normal, 
+            QString::fromStdString(pdf.file_name), 
+            &ok
+        );
+
+        if (ok && !newName.isEmpty()) 
+        {
+            pdf.file_name = newName.toStdString();
+
+            pdf.button->setText(
+                QString("%1 (Page %2 of %3)")
+                    .arg(newName)
+                    .arg(pdf.page_num)
+                    .arg(pdf.total_page_num)
+            );
+
+            pdf.flowButton->setToolTip(
+                QString("%1 (Page %2 of %3)")
+                    .arg(newName)
+                    .arg(pdf.page_num)
+                    .arg(pdf.total_page_num)
+            );
+        }
+    });
+
+
     cat.layout->addWidget(pdf.button);
 
     //------------------------------------------------------------------------
             
-    pdf.flowButton = new WordWrapButton("", nullptr);
+    pdf.flowButton = new PDFButton("", nullptr);
 
     pdf.flowButton->setMinimumSize(squareSize, squareSize);
     pdf.flowButton->setMaximumSize(squareSize, squareSize);
@@ -438,7 +467,7 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
                         .arg(pdf.page_num)
                         .arg(pdf.total_page_num));
 
-    connect(pdf.flowButton, &WordWrapButton::clicked, this,
+    connect(pdf.flowButton, &PDFButton::clicked, this,
         [this, filePath = pdf.file_path, button = cat.addButton]() 
         { 
             for (auto& myCat : PDFcats) {
@@ -448,6 +477,38 @@ void PDFManager::setupPDFButton(PDFInfo &pdf, PDFCat &cat)
                 }
             }
         });
+
+    connect(pdf.flowButton, &PDFButton::editRequested, this, 
+    [this, &pdf, &cat]() {
+        bool ok;
+        QString newName = QInputDialog::getText(
+            nullptr, 
+            "Edit PDF Name", 
+            "Enter new name:", 
+            QLineEdit::Normal, 
+            QString::fromStdString(pdf.file_name), 
+            &ok
+        );
+
+        if (ok && !newName.isEmpty()) 
+        {
+            pdf.file_name = newName.toStdString();
+
+            pdf.button->setText(
+                QString("%1 (Page %2 of %3)")
+                    .arg(newName)
+                    .arg(pdf.page_num)
+                    .arg(pdf.total_page_num)
+            );
+
+            pdf.flowButton->setToolTip(
+                QString("%1 (Page %2 of %3)")
+                    .arg(newName)
+                    .arg(pdf.page_num)
+                    .arg(pdf.total_page_num)
+            );
+        }
+    });
 
     cat.flowLayout->addWidget(pdf.flowButton);
 
@@ -1024,7 +1085,7 @@ void PDFManager::setupNewPDF(PDFCat &category, QString &filePath)
     bool isDuplicate = false;
     for (auto &pdf : category.PDFFiles) 
     {
-        if (pdf.file_name == fileName.toStdString()) {
+        if (pdf.file_path == filePath.toStdString()) {
             isDuplicate = true;
             QMessageBox::information(this, "Duplicate File",
                                      "This PDF file is already in your list.");
@@ -1084,9 +1145,6 @@ void PDFManager::updateTimestamps(PDFInfo &pdf)
 
 void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
 {
-    QFileInfo fileInfo(filePath);
-    QString fileName = fileInfo.fileName();
-
     QProcess* process = new QProcess(this);
 
     if (processToPDF.isEmpty()) {
@@ -1095,7 +1153,7 @@ void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
         firstProcess = false;
     }
 
-    processToPDF[process] = fileName;
+    processToPDF[process] = filePath;
 
     process->setProperty("autoDelete", true);
    
@@ -1138,7 +1196,7 @@ void PDFManager::openPDF(PDFCat &cat, const QString &filePath)
     // Open to stored page
     for (auto& pdf : cat.PDFFiles) 
     {
-        if ((QString::fromStdString(pdf.file_name) == fileName)) 
+        if ((QString::fromStdString(pdf.file_path) == filePath)) 
         {
             arguments << QString("-new-window");
             arguments << QString("-view");
@@ -1194,15 +1252,18 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
     {
         QProcess *process = it.key();      // Get the QProcess pointer (key)
 
-        QString fileName = it.value();
-        if (fileName.isEmpty()) 
+        QString filePath = it.value();
+        if (filePath.isEmpty()) 
             continue;
+
+        QFileInfo fileInfo(filePath);
+        QString fileName = fileInfo.fileName();
 
         for (auto& pdf : category.PDFFiles) 
         {
-            if (QString::fromStdString(pdf.file_name) == fileName) 
+            if (QString::fromStdString(pdf.file_path) == filePath) 
             {
-                PDFInfo tempPdf(pdf.file_name);
+                PDFInfo tempPdf(fileName.toStdString());
 
         #ifdef Q_OS_WIN
                 tempPdf.parseSumatraSettings("C:\\Users\\zezo_\\AppData\\Local\\SumatraPDF\\SumatraPDF-settings.txt");
@@ -1233,7 +1294,7 @@ void PDFManager::handleFinished(int exitCode, QProcess::ExitStatus exitStatus, P
             }
         }
 
-        qDebug() << "Process:" << process << "PDF Name:" << fileName;
+        qDebug() << "Process:" << process << "PDF Path:" << filePath;
     }
     processToPDF.clear();
 }

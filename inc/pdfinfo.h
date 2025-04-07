@@ -31,21 +31,21 @@ struct PDFInfo
     int page_num = 0;               // last opened page
 
     int total_page_num = 0;
-    qint64 last_opened_time = 0;       // sort using it
+    qint64 last_opened_time = 0;    // sort using it
 
     QPixmap thumbnail;
 
-
     std::string mode;               // to be used to add options like open in full screen or presentation mode or whatever
 
-    WordWrapButton *button = nullptr;
-    WordWrapButton *flowButton = nullptr;
+    PDFButton *button = nullptr;
+    PDFButton *flowButton = nullptr;
 
     PDFInfo() {}
     PDFInfo(const std::string filename) : file_name(filename){}
 
     void parseSumatraSettings(const std::string &settings_path);
-    // For linux, each pdf file has a corresponding small xml file so regex shouldnt slow things that much and its easier
+
+    // WIP for linux
     int parseOkularSettings(const std::string& settings_path);
 };
 
@@ -56,11 +56,11 @@ struct PDFCat
     // each category has a number of pdfs 
     std::vector<PDFInfo> PDFFiles;
 
-    QWidget                        *container     = nullptr;
-    QStackedWidget                 *stackedWidget = nullptr;
+    QWidget              *container     = nullptr;
+    QStackedWidget       *stackedWidget = nullptr;
 
-    SortedVBoxLayout*           layout        = nullptr;
-    SortedFlowLayout*           flowLayout    = nullptr; 
+    SortedVBoxLayout*     layout        = nullptr;
+    SortedFlowLayout*     flowLayout    = nullptr; 
 
     // to add new categories
     QPushButton     *addButton      = nullptr;

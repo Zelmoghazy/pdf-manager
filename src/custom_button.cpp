@@ -1,38 +1,85 @@
 #include "custom_button.hpp"
 
-WordWrapButton::WordWrapButton(const QString& text, QWidget* parent = nullptr)
+PDFButton::PDFButton(const QString& text, QWidget* parent = nullptr)
     : QPushButton(parent), m_text(text) 
 {
     setupButton();
 }
 
-void WordWrapButton::setText(const QString& text){
+void PDFButton::setText(const QString& text){
     m_text = text;
     m_label->setText(text);
     adjustText();
 }
-void WordWrapButton::setTimestamp(qint64 time) 
+
+void PDFButton::setTimestamp(qint64 time) 
 {
     m_timestamp = time;
 }
 
-QString WordWrapButton::getText() 
+QString PDFButton::getText() 
 { 
     return m_text; 
 }
 
-qint64 WordWrapButton::getTimestamp() 
+qint64 PDFButton::getTimestamp() 
 {
     return m_timestamp; 
 }
     
-void WordWrapButton::resizeEvent(QResizeEvent* event) 
+void PDFButton::resizeEvent(QResizeEvent* event) 
 {
     QPushButton::resizeEvent(event);
     adjustText();
 }
 
-void WordWrapButton::setupButton() 
+void PDFButton::contextMenuEvent(QContextMenuEvent* event)
+{
+    QMenu contextMenu(this);
+        // Apply styling to the menu
+    contextMenu.setStyleSheet(
+        "QMenu {"
+        "    background-color: #3B4252;"     
+        "    color: #D8DEE9;"                
+        "    border: 1px solid #4C566A;"     
+        "    padding: 5px;"                  
+        "}"
+        "QMenu::item {"
+        "    padding: 8px 20px;"             
+        "    border-radius: 4px;"            
+        "}"
+        "QMenu::item:selected {"             
+        "    background-color: #5E81AC;"     
+        "    color: #ECEFF4;"                
+        "}"
+        "QMenu::separator {"
+        "    height: 1px;"                   
+        "    background: #4C566A;"           
+        "    margin: 4px 10px;"              
+        "}"
+    );
+    
+    QAction* copyAction = contextMenu.addAction("Copy Text");
+    QAction* editAction = contextMenu.addAction("Edit");
+    contextMenu.addSeparator();
+    QAction* deleteAction = contextMenu.addAction("Delete");
+    
+    connect(copyAction, &QAction::triggered, this, [this]() {
+        QApplication::clipboard()->setText(m_text);
+    });
+    
+    connect(editAction, &QAction::triggered, this, [this]() {
+        emit editRequested(this);
+    });
+    
+    connect(deleteAction, &QAction::triggered, this, [this]() {
+        emit deleteRequested(this);
+    });
+    
+    contextMenu.exec(event->globalPos());
+}
+
+void PDFButton::setupButton() 
 {
     m_label = new QLabel(this);
     m_label->setText(m_text);
@@ -56,25 +103,26 @@ void WordWrapButton::setupButton()
     #if 0
     this->setStyleSheet(
         "QPushButton {"
-        "   background-color: #1e1e1e;" // Default background color
-        "   border: 1px solid transparent;" // Transparent border
-        "   border-radius: 10px;" // Rounded corners
-        "   padding: 5px;" // Padding inside the button
-        "   color: white;" // Text color
+        "   background-color: #1e1e1e;" 
+        "   border: 1px solid transparent;" 
+        "   border-radius: 10px;" 
+        "   padding: 5px;" 
+        "   color: white;" 
         "}"
         "QPushButton:hover {"
-        "   background-color: #8c8c8c;" // Background color on hover
-        "   border: 1px solid transparent;" // Transparent border
+        "   background-color: #8c8c8c;" 
+        "   border: 1px solid transparent;" 
         "}"
         "QPushButton:pressed {"
-        "   background-color: #C0E0FF;" // Background color when pressed
-        "   border: 1px solid transparent;" // Transparent border
+        "   background-color: #C0E0FF;"
+        "   border: 1px solid transparent;" 
         "}"
     );
     #endif
 }
-    
-void WordWrapButton::adjustText() 
+ 
+// Simple word wrapping algorithm
+void PDFButton::adjustText() 
 {
     QFontMetrics fm(m_label->font());
     int availableWidth = width() - 10;
