@@ -23,12 +23,17 @@ public:
 signals:
     void editRequested(PDFButton* button);
     void deleteRequested(PDFButton* button);
+private slots:
+    void checkAndAdjustText();
 protected:
+    void showEvent(QShowEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override; 
 private:
     void setupButton();
     void adjustText();
+    bool isFullyVisible() const;
 
     QString m_text;
     QLabel* m_label;

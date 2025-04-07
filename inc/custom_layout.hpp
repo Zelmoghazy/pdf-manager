@@ -31,7 +31,8 @@ class SortedFlowLayout : public FlowLayout
 {
 public:
     // Constructors
-    SortedFlowLayout(CompareFunc compareFunc, QWidget* parent = nullptr, int margin = -1, int hSpacing = -1, int vSpacing = -1);
+    SortedFlowLayout(CompareFunc compareFunc, QWidget* parent = nullptr, 
+                     int margin = -1, int hSpacing = -1, int vSpacing = -1);
     
     void setCompareFunc(CompareFunc compareFunc);
     void addWidget(QWidget *widget);

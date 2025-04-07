@@ -776,7 +776,7 @@ void PDFManager::createCategoriesArea()
         "    color: #6d6d6d;"              
         "}"
     );
-    toolbox->setFixedHeight(600);
+    //toolbox->setFixedHeight(900);
 
     // make toolbox scrollable
     categoriesArea->setWidget(toolbox);
@@ -800,6 +800,7 @@ void PDFManager::onAddCategoryClicked()
         auto &cat = PDFcats.back();
 
         PDFManager::setupNewCat(cat);
+        cat.container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
         toolbox->addItem(cat.container, QString::fromStdString(cat.category));
 

@@ -6,7 +6,8 @@ PDFButton::PDFButton(const QString& text, QWidget* parent = nullptr)
     setupButton();
 }
 
-void PDFButton::setText(const QString& text){
+void PDFButton::setText(const QString& text)
+{
     m_text = text;
     m_label->setText(text);
     adjustText();
@@ -36,7 +37,6 @@ void PDFButton::resizeEvent(QResizeEvent* event)
 void PDFButton::contextMenuEvent(QContextMenuEvent* event)
 {
     QMenu contextMenu(this);
-        // Apply styling to the menu
     contextMenu.setStyleSheet(
         "QMenu {"
         "    background-color: #3B4252;"     
@@ -100,6 +100,13 @@ void PDFButton::setupButton()
 
     QPushButton::setText("");
 
+    if (isVisible() && isFullyVisible()) 
+    {
+        adjustText();
+    }
+    
+    installEventFilter(this);
+
     #if 0
     this->setStyleSheet(
         "QPushButton {"
@@ -120,10 +127,54 @@ void PDFButton::setupButton()
     );
     #endif
 }
- 
+
+bool PDFButton::isFullyVisible() const
+{
+    if (visibleRegion().isEmpty()) 
+    {
+        return false;
+    }
+    
+    QRect visibleRect = visibleRegion().boundingRect();
+    return (visibleRect.width() == width() && visibleRect.height() == height());
+}
+
+void PDFButton::checkAndAdjustText()
+{
+    if (isVisible() && isFullyVisible()) 
+    {
+        adjustText();
+    }
+}
+
+bool PDFButton::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == this) 
+    {
+        if (event->type() == QEvent::Paint        || 
+            event->type() == QEvent::Show         || 
+            event->type() == QEvent::ShowToParent ||
+            event->type() == QEvent::ParentChange) 
+        {
+            checkAndAdjustText();
+        }
+    }
+    return QPushButton::eventFilter(watched, event);
+}
+
+void PDFButton::showEvent(QShowEvent* event)
+{
+    QPushButton::showEvent(event);
+    checkAndAdjustText();
+}
+
 // Simple word wrapping algorithm
 void PDFButton::adjustText() 
 {
+    if (!isVisible() || !isFullyVisible()) {
+        return;
+    }
+
     QFontMetrics fm(m_label->font());
     int availableWidth = width() - 10;
 
@@ -162,3 +213,4 @@ void PDFButton::adjustText()
 
     m_label->setText(wrappedText);
 }
+

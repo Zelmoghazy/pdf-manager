@@ -54,17 +54,17 @@ struct PDFCat
     std::string category;
 
     // each category has a number of pdfs 
-    std::vector<PDFInfo> PDFFiles;
+    std::vector<PDFInfo>  PDFFiles;
 
-    QWidget              *container     = nullptr;
-    QStackedWidget       *stackedWidget = nullptr;
+    QWidget               *container     = nullptr;
+    QStackedWidget        *stackedWidget = nullptr;
 
-    SortedVBoxLayout*     layout        = nullptr;
-    SortedFlowLayout*     flowLayout    = nullptr; 
+    SortedVBoxLayout*     layout         = nullptr;
+    SortedFlowLayout*     flowLayout     = nullptr; 
 
     // to add new categories
-    QPushButton     *addButton      = nullptr;
-    QPushButton     *flowAddButton  = nullptr;
+    QPushButton           *addButton      = nullptr;
+    QPushButton           *flowAddButton  = nullptr;
 
     PDFCat() {}
     PDFCat(const std::string cat_name) : category(cat_name){}
